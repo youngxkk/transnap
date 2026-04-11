@@ -1,0 +1,9 @@
+.DS_Store
+.DerivedData/
+DerivedData/
+build/
+*.xcodeproj/project.xcworkspace/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/
+node_modules/
+.antigravityignore
