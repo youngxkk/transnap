@@ -127,6 +127,8 @@ final class TransnapViewModel: ObservableObject {
     private func queueTranslation(for text: String, trigger: TranslationTrigger) {
         guard let direction = LanguageDirectionResolver.resolve(
             for: text,
+            sourceLanguage: settingsStore.sourceLanguage,
+            targetLanguage: settingsStore.targetLanguage,
             preferredTargetLanguage: settingsStore.preferredTargetLanguage
         ) else {
             statusMessage = "无法识别语言"

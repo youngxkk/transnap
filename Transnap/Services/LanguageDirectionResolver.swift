@@ -19,38 +19,45 @@ enum LanguageDirectionResolver {
     private static let chineseCodes = ["zh", "zh-Hans", "zh-Hant"]
     private static let englishCode = "en"
 
-    static func resolve(for text: String, preferredTargetLanguage: PreferredTargetLanguage) -> TranslationDirection? {
+    static func resolve(for text: String, sourceLanguage: String, targetLanguage: String, preferredTargetLanguage: PreferredTargetLanguage) -> TranslationDirection? {
         let recognizer = NLLanguageRecognizer()
         recognizer.processString(text)
 
-        guard let detected = recognizer.dominantLanguage else {
-            return fallbackDirection(preferredTargetLanguage: preferredTargetLanguage)
-        }
-
-        let detectedIdentifier = detected.rawValue
+        let detected = recognizer.dominantLanguage
+        let detectedIdentifier = detected?.rawValue ?? "und"
         let systemIdentifier = Locale.preferredLanguages.first ?? Locale.current.language.languageCode?.identifier ?? englishCode
 
-        let source = Locale.Language(identifier: detectedIdentifier)
-        let targetIdentifier: String
+        let finalSourceIdentifier: String
+        if sourceLanguage == "auto" {
+            finalSourceIdentifier = detectedIdentifier
+        } else {
+            finalSourceIdentifier = sourceLanguage
+        }
 
-        switch preferredTargetLanguage {
-        case .simplifiedChinese:
-            targetIdentifier = "zh-Hans"
-        case .english:
-            targetIdentifier = englishCode
-        case .automatic:
-            if isChinese(systemIdentifier) {
-                targetIdentifier = isChinese(detectedIdentifier) ? englishCode : "zh-Hans"
-            } else {
-                targetIdentifier = isEnglish(detectedIdentifier) ? "zh-Hans" : englishCode
+        let finalTargetIdentifier: String
+        if targetLanguage == "auto" {
+            // Apply existing automatic logic if target is auto
+            switch preferredTargetLanguage {
+            case .simplifiedChinese:
+                finalTargetIdentifier = "zh-Hans"
+            case .english:
+                finalTargetIdentifier = englishCode
+            case .automatic:
+                if isChinese(systemIdentifier) {
+                    finalTargetIdentifier = isChinese(finalSourceIdentifier) ? englishCode : "zh-Hans"
+                } else {
+                    finalTargetIdentifier = isEnglish(finalSourceIdentifier) ? "zh-Hans" : englishCode
+                }
             }
+        } else {
+            finalTargetIdentifier = targetLanguage
         }
 
         return TranslationDirection(
-            source: source,
-            target: Locale.Language(identifier: targetIdentifier),
-            detectedSourceIdentifier: detectedIdentifier,
-            targetIdentifier: targetIdentifier
+            source: finalSourceIdentifier == "und" ? nil : Locale.Language(identifier: finalSourceIdentifier),
+            target: Locale.Language(identifier: finalTargetIdentifier),
+            detectedSourceIdentifier: finalSourceIdentifier,
+            targetIdentifier: finalTargetIdentifier
         )
     }
 
@@ -58,24 +65,30 @@ enum LanguageDirectionResolver {
         Locale.current.localizedString(forIdentifier: identifier) ?? identifier
     }
 
-    private static func fallbackDirection(preferredTargetLanguage: PreferredTargetLanguage) -> TranslationDirection {
+    private static func fallbackDirection(sourceLanguage: String, targetLanguage: String, preferredTargetLanguage: PreferredTargetLanguage) -> TranslationDirection {
         let systemIdentifier = Locale.preferredLanguages.first ?? englishCode
-        let targetIdentifier: String
-
-        switch preferredTargetLanguage {
-        case .simplifiedChinese:
-            targetIdentifier = "zh-Hans"
-        case .english:
-            targetIdentifier = englishCode
-        case .automatic:
-            targetIdentifier = isChinese(systemIdentifier) ? englishCode : "zh-Hans"
+        
+        let finalSourceIdentifier = sourceLanguage == "auto" ? "und" : sourceLanguage
+        let finalTargetIdentifier: String
+        
+        if targetLanguage == "auto" {
+            switch preferredTargetLanguage {
+            case .simplifiedChinese:
+                finalTargetIdentifier = "zh-Hans"
+            case .english:
+                finalTargetIdentifier = englishCode
+            case .automatic:
+                finalTargetIdentifier = isChinese(systemIdentifier) ? englishCode : "zh-Hans"
+            }
+        } else {
+            finalTargetIdentifier = targetLanguage
         }
 
         return TranslationDirection(
-            source: nil,
-            target: Locale.Language(identifier: targetIdentifier),
-            detectedSourceIdentifier: "und",
-            targetIdentifier: targetIdentifier
+            source: finalSourceIdentifier == "und" ? nil : Locale.Language(identifier: finalSourceIdentifier),
+            target: Locale.Language(identifier: finalTargetIdentifier),
+            detectedSourceIdentifier: finalSourceIdentifier,
+            targetIdentifier: finalTargetIdentifier
         )
     }
 
