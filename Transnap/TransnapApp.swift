@@ -19,6 +19,7 @@ struct TransnapApp: App {
     private let appSettingsController: AppSettingsController?
     private let doubleCopyMonitor: DoubleCopyMonitor?
     private let hotkeyManager: GlobalHotkeyManager?
+    private let menuBarController: MenuBarController?
     private let windowCoordinator: WindowCoordinator
     @StateObject private var viewModel: TransnapViewModel
 
@@ -57,8 +58,17 @@ struct TransnapApp: App {
             appSettingsController = nil
             doubleCopyMonitor = nil
             hotkeyManager = nil
+            menuBarController = nil
         } else {
             appSettingsController = AppSettingsController(settingsStore: settingsStore)
+
+            let menuBarController = MenuBarController(
+                viewModel: rootViewModel,
+                settingsStore: settingsStore,
+                windowCoordinator: coordinator,
+                modelContainer: container
+            )
+            self.menuBarController = menuBarController
 
             let monitor = DoubleCopyMonitor {
                 rootViewModel.requestQuickClipboardTranslation()
@@ -68,36 +78,13 @@ struct TransnapApp: App {
 
             let hotkeyManager = GlobalHotkeyManager(settingsStore: settingsStore)
             hotkeyManager.onTrigger = {
-                coordinator.showTranslatorWindow()
+                menuBarController.togglePopover()
             }
             self.hotkeyManager = hotkeyManager
         }
     }
 
     var body: some Scene {
-        MenuBarExtra {
-            MenuBarRootView(
-                viewModel: viewModel,
-                settingsStore: settingsStore,
-                windowCoordinator: windowCoordinator
-            )
-            .modelContainer(sharedModelContainer)
-        } label: {
-            Label {
-                ZStack(alignment: .leading) {
-                    Text("Transnap")
-                        .opacity(viewModel.menuBarSubtitle.isEmpty ? 1 : max(0, 1 - viewModel.menuBarSubtitleOpacity))
-                    Text(viewModel.menuBarSubtitle)
-                        .opacity(viewModel.menuBarSubtitleOpacity)
-                }
-                .animation(.easeInOut(duration: 0.24), value: viewModel.menuBarSubtitleOpacity)
-            } icon: {
-                Image(systemName: "character.bubble")
-            }
-        }
-        .menuBarExtraStyle(.window)
-        .modelContainer(sharedModelContainer)
-
         Settings {
             SettingsView(settingsStore: settingsStore)
                 .modelContainer(sharedModelContainer)

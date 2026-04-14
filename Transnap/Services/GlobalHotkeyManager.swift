@@ -17,9 +17,11 @@ final class GlobalHotkeyManager {
     private var eventHandlerRef: EventHandlerRef?
     private var cancellables: Set<AnyCancellable> = []
     private let settingsStore: SettingsStore
+    private let hotKeyTarget: EventTargetRef?
 
     init(settingsStore: SettingsStore) {
         self.settingsStore = settingsStore
+        self.hotKeyTarget = GetEventDispatcherTarget()
         installEventHandler()
         bindSettings()
         registerCurrentShortcut()
@@ -63,7 +65,7 @@ final class GlobalHotkeyManager {
         }
 
         InstallEventHandler(
-            GetApplicationEventTarget(),
+            hotKeyTarget,
             handler,
             1,
             &eventType,
@@ -76,14 +78,18 @@ final class GlobalHotkeyManager {
         unregisterHotkey()
 
         let hotKeyID = EventHotKeyID(signature: OSType(0x54534E50), id: 1)
-        RegisterEventHotKey(
+        let status = RegisterEventHotKey(
             UInt32(settingsStore.shortcutKeyCode),
             settingsStore.shortcutModifiers,
             hotKeyID,
-            GetApplicationEventTarget(),
+            hotKeyTarget,
             0,
             &hotKeyRef
         )
+
+        if status != noErr {
+            hotKeyRef = nil
+        }
     }
 
     private func unregisterHotkey() {

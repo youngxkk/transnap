@@ -30,8 +30,9 @@ enum PreferredTargetLanguage: String, CaseIterable, Identifiable {
 
 @MainActor
 final class SettingsStore: ObservableObject {
-    static let minMenuBarPanelHeight: Double = 300
-    static let maxMenuBarPanelHeight: Double = 560
+    static let defaultMenuBarPanelHeight: Double = 440
+    static let minMenuBarPanelHeight: Double = 400
+    static let maxMenuBarPanelHeight: Double = 640
 
     enum LaunchAtLoginState: Equatable {
         case enabled
@@ -151,7 +152,7 @@ final class SettingsStore: ObservableObject {
 
         let storedMenuBarPanelHeight = defaults.object(forKey: Keys.menuBarPanelHeight) as? Double
         self.menuBarPanelHeight = Self.clampMenuBarPanelHeight(
-            storedMenuBarPanelHeight ?? Self.minMenuBarPanelHeight
+            storedMenuBarPanelHeight ?? Self.defaultMenuBarPanelHeight
         )
     }
 

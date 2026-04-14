@@ -34,15 +34,26 @@ final class WindowCoordinator {
         if translatorWindowController == nil {
             let content = TranslatorWindowView(viewModel: viewModel, settingsStore: settingsStore, windowCoordinator: self)
                 .modelContainer(modelContainer)
-            translatorWindowController = makeWindowController(
-                title: "Transnap",
+            translatorWindowController = makeTranslatorPanelController(
                 size: NSSize(width: 380, height: 360),
                 content: content
             )
         }
 
         viewModel.handleMenuOpened()
+        positionTranslatorWindowIfNeeded()
         show(windowController: translatorWindowController)
+    }
+
+    func toggleTranslatorWindow() {
+        if let window = translatorWindowController?.window,
+           window.isVisible,
+           NSApp.keyWindow === window || NSApp.mainWindow === window {
+            window.orderOut(nil)
+            return
+        }
+
+        showTranslatorWindow()
     }
 
     func showHistoryWindow() {
@@ -75,8 +86,57 @@ final class WindowCoordinator {
 
     private func show(windowController: NSWindowController?) {
         NSApp.activate(ignoringOtherApps: true)
+        if let window = windowController?.window, window.isMiniaturized {
+            window.deminiaturize(nil)
+        }
         windowController?.showWindow(nil)
+        windowController?.window?.orderFrontRegardless()
         windowController?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    private func positionTranslatorWindowIfNeeded() {
+        guard let window = translatorWindowController?.window else { return }
+
+        let mouseLocation = NSEvent.mouseLocation
+        let targetScreen = NSScreen.screens.first { NSMouseInRect(mouseLocation, $0.frame, false) } ?? window.screen ?? NSScreen.main
+        guard let screen = targetScreen else { return }
+
+        let windowSize = window.frame.size
+        let horizontalInset: CGFloat = 36
+        let verticalGap: CGFloat = 6
+        let menuBarHeight = screen.frame.maxY - screen.visibleFrame.maxY
+
+        let x = screen.visibleFrame.maxX - windowSize.width - horizontalInset
+        let y = screen.frame.maxY - menuBarHeight - windowSize.height - verticalGap
+
+        window.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+
+    private func makeTranslatorPanelController<Content: View>(
+        size: NSSize,
+        content: Content
+    ) -> NSWindowController {
+        let hostingController = NSHostingController(rootView: content)
+        let panel = FloatingTranslatorPanel(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+
+        panel.contentViewController = hostingController
+        panel.setContentSize(size)
+        panel.isReleasedWhenClosed = false
+        panel.isMovableByWindowBackground = false
+        panel.hidesOnDeactivate = false
+        panel.becomesKeyOnlyIfNeeded = false
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
+        panel.level = .statusBar
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
+
+        return NSWindowController(window: panel)
     }
 
     private func makeWindowController<Content: View>(
@@ -95,4 +155,9 @@ final class WindowCoordinator {
         window.toolbarStyle = .unifiedCompact
         return NSWindowController(window: window)
     }
+}
+
+private final class FloatingTranslatorPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
 }

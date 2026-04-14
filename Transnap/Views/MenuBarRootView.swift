@@ -21,9 +21,6 @@ struct MenuBarRootView: View {
             windowCoordinator: windowCoordinator
         )
         .frame(width: 360, height: settingsStore.menuBarPanelHeight)
-        .onAppear {
-            viewModel.handleMenuOpened()
-        }
     }
 }
 
@@ -40,9 +37,6 @@ struct TranslatorWindowView: View {
             windowCoordinator: windowCoordinator
         )
         .frame(minWidth: 360, minHeight: 300)
-        .onAppear {
-            viewModel.handleMenuOpened()
-        }
     }
 }
 
@@ -51,9 +45,12 @@ private struct TranslatorPanelView: View {
     @ObservedObject var viewModel: TransnapViewModel
     @ObservedObject var settingsStore: SettingsStore
     let windowCoordinator: WindowCoordinator
-    @State private var inputEditorHeight: CGFloat = 86
+    @State private var inputEditorHeight: CGFloat = 126
     @State private var dragStartPanelHeight: Double?
-    private let resizeHotspotSize: CGFloat = 18
+    private let resizeHandleHeight: CGFloat = 20
+    private let inputMinLines = 5
+    private let inputMaxLines = 8
+    private let resultMinimumHeight: CGFloat = 126
     @State private var isHoveringCopy: Bool = false
     @State private var showCopiedFeedback = false
 
@@ -66,35 +63,18 @@ private struct TranslatorPanelView: View {
                 resultSection
             }
             .padding(14)
+            .padding(.bottom, resizeHandleHeight + 6)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(.regularMaterial)
+        .background(panelBackground)
         .scrollBounceBehavior(.basedOnSize)
         .animation(.spring(response: 0.34, dampingFraction: 0.86), value: viewModel.isTranslating)
         .animation(.easeInOut(duration: 0.22), value: viewModel.translatedText)
         .translationTask(viewModel.translationConfiguration) { session in
             await viewModel.performTranslation(using: session)
         }
-        .overlay(alignment: .bottomTrailing) {
-            Color.clear
-                .frame(width: resizeHotspotSize, height: resizeHotspotSize)
-                .contentShape(Rectangle())
-                .modifier(ResizeCursorModifier())
-                .gesture(
-                    DragGesture(minimumDistance: 2)
-                        .onChanged { value in
-                            if dragStartPanelHeight == nil {
-                                dragStartPanelHeight = settingsStore.menuBarPanelHeight
-                            }
-
-                            let startHeight = dragStartPanelHeight ?? settingsStore.menuBarPanelHeight
-                            let nextHeight = startHeight + value.translation.height
-                            settingsStore.menuBarPanelHeight = nextHeight
-                        }
-                        .onEnded { _ in
-                            dragStartPanelHeight = nil
-                        }
-                )
+        .overlay(alignment: .bottom) {
+            resizeHandle
         }
         .onChange(of: viewModel.copyFeedbackToken) { _, _ in
             guard !viewModel.translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
@@ -109,6 +89,29 @@ private struct TranslatorPanelView: View {
                     showCopiedFeedback = false
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var panelBackground: some View {
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+
+        if #available(macOS 26.0, *) {
+            shape
+                .fill(.clear)
+                .glassEffect(.regular, in: shape)
+                .overlay {
+                    shape
+                        .strokeBorder(Color.white.opacity(0.18), lineWidth: 0.5)
+                }
+        } else {
+            shape
+                .fill(Color.white.opacity(0.58))
+                .background(.regularMaterial, in: shape)
+                .overlay {
+                    shape
+                        .strokeBorder(Color.white.opacity(0.22), lineWidth: 0.5)
+                }
         }
     }
 
@@ -179,8 +182,8 @@ private struct TranslatorPanelView: View {
             AdaptiveTextEditor(
                 text: $viewModel.inputText,
                 dynamicHeight: $inputEditorHeight,
-                minLines: 3,
-                maxLines: 6
+                minLines: inputMinLines,
+                maxLines: inputMaxLines
             )
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
@@ -216,6 +219,39 @@ private struct TranslatorPanelView: View {
         }
     }
 
+    private var resizeHandle: some View {
+        ZStack {
+            Color.clear
+
+            Capsule(style: .continuous)
+                .fill(Color.primary.opacity(0.14))
+                .frame(width: 52, height: 5)
+                .overlay {
+                    Capsule(style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
+                }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: resizeHandleHeight)
+        .background(.regularMaterial.opacity(0.001))
+        .contentShape(Rectangle())
+        .modifier(ResizeCursorModifier())
+        .gesture(
+            DragGesture(minimumDistance: 2)
+                .onChanged { value in
+                    if dragStartPanelHeight == nil {
+                        dragStartPanelHeight = settingsStore.menuBarPanelHeight
+                    }
+
+                    let startHeight = dragStartPanelHeight ?? settingsStore.menuBarPanelHeight
+                    settingsStore.menuBarPanelHeight = startHeight + value.translation.height
+                }
+                .onEnded { _ in
+                    dragStartPanelHeight = nil
+                }
+        )
+    }
+
     private var resultSection: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
@@ -241,7 +277,7 @@ private struct TranslatorPanelView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 2)
         }
-        .frame(minHeight: 120)
+        .frame(minHeight: resultMinimumHeight)
         .padding(12)
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
@@ -313,25 +349,5 @@ private struct ResizeCursorModifier: ViewModifier {
 }
 
 private enum ResizeCursor {
-    static let shared: NSCursor = {
-        let baseSize = CGSize(width: 18, height: 18)
-        let image = NSImage(size: baseSize)
-        image.lockFocus()
-
-        let configuration = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
-        let symbol = NSImage(
-            systemSymbolName: "arrow.up.left.and.arrow.down.right",
-            accessibilityDescription: "Resize"
-        )?.withSymbolConfiguration(configuration)
-
-        symbol?.draw(
-            in: NSRect(x: 1, y: 1, width: 16, height: 16),
-            from: .zero,
-            operation: .sourceOver,
-            fraction: 1
-        )
-
-        image.unlockFocus()
-        return NSCursor(image: image, hotSpot: NSPoint(x: 9, y: 9))
-    }()
+    static let shared: NSCursor = .resizeUpDown
 }

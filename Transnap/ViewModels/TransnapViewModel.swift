@@ -36,6 +36,7 @@ final class TransnapViewModel: ObservableObject {
 
     func handleMenuOpened() {
         syncInputFromClipboard()
+        requestAutomaticTranslationIfPossible()
     }
 
     func syncInputFromClipboard() {
@@ -60,6 +61,13 @@ final class TransnapViewModel: ObservableObject {
         }
 
         queueTranslation(for: trimmed, trigger: .manualInput)
+    }
+
+    func requestAutomaticTranslationIfPossible() {
+        let trimmed = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        queueTranslation(for: trimmed, trigger: .menuBarClick)
     }
 
     func requestQuickClipboardTranslation() {
@@ -109,6 +117,8 @@ final class TransnapViewModel: ObservableObject {
             if request.trigger == .doubleCopy {
                 showMenuBarSubtitle(response.targetText)
             }
+        } catch is CancellationError {
+            lastErrorMessage = nil
         } catch {
             translatedText = ""
             sourceText = request.text
@@ -153,14 +163,17 @@ final class TransnapViewModel: ObservableObject {
         isTranslating = true
         lastErrorMessage = nil
 
-        translationConfiguration = nil
-        let configuration = TranslationSession.Configuration(
+        let nextConfiguration = TranslationSession.Configuration(
             source: direction.source,
             target: direction.target
         )
 
-        Task { @MainActor [weak self] in
-            self?.translationConfiguration = configuration
+        if var existingConfiguration = translationConfiguration,
+           existingConfiguration == nextConfiguration {
+            existingConfiguration.invalidate()
+            translationConfiguration = existingConfiguration
+        } else {
+            translationConfiguration = nextConfiguration
         }
     }
 
