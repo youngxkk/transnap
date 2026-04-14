@@ -11,6 +11,7 @@ import SwiftData
 import SwiftUI
 import Translation
 
+@available(macOS 15.0, *)
 @MainActor
 final class TransnapViewModel: ObservableObject {
     @Published var translationConfiguration: TranslationSession.Configuration?
@@ -20,7 +21,9 @@ final class TransnapViewModel: ObservableObject {
     @Published var statusMessage = "点击状态栏图标即可翻译剪贴板"
     @Published var isTranslating = false
     @Published var menuBarSubtitle = ""
+    @Published var menuBarSubtitleOpacity = 0.0
     @Published var lastErrorMessage: String?
+    @Published private(set) var copyFeedbackToken = 0
     private var pendingRequest: PendingTranslationRequest?
     private var clearSubtitleTask: Task<Void, Never>?
     private let modelContext: ModelContext
@@ -77,10 +80,12 @@ final class TransnapViewModel: ObservableObject {
         ClipboardService.copy(text: trimmed)
         statusMessage = "译文已复制"
         lastErrorMessage = nil
+        copyFeedbackToken += 1
     }
 
     func performTranslation(using session: TranslationSession) async {
         guard let request = pendingRequest else { return }
+        pendingRequest = nil
 
         do {
             let response = try await session.translate(request.text)
@@ -94,6 +99,7 @@ final class TransnapViewModel: ObservableObject {
 
             modelContext.insert(record)
             try modelContext.save()
+            try pruneHistoryIfNeeded()
 
             sourceText = response.sourceText
             translatedText = response.targetText
@@ -106,13 +112,11 @@ final class TransnapViewModel: ObservableObject {
         } catch {
             translatedText = ""
             sourceText = request.text
-            statusMessage = "翻译失败"
+            statusMessage = "翻译失败: \(error.localizedDescription)"
             lastErrorMessage = error.localizedDescription
         }
 
-        pendingRequest = nil
         isTranslating = false
-        translationConfiguration = nil
     }
 
     func delete(_ record: TranslationRecord) {
@@ -162,12 +166,40 @@ final class TransnapViewModel: ObservableObject {
 
     private func showMenuBarSubtitle(_ text: String) {
         clearSubtitleTask?.cancel()
-        menuBarSubtitle = String(text.prefix(18))
+        let subtitle = String(text.prefix(18))
+
+        withAnimation(.easeOut(duration: 0.18)) {
+            menuBarSubtitleOpacity = 0
+        }
+        menuBarSubtitle = subtitle
+
+        withAnimation(.easeOut(duration: 0.24)) {
+            menuBarSubtitleOpacity = 1
+        }
 
         clearSubtitleTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(8))
+            try? await Task.sleep(for: .seconds(2.6))
+            withAnimation(.easeInOut(duration: 0.3)) {
+                self?.menuBarSubtitleOpacity = 0
+            }
+            try? await Task.sleep(for: .milliseconds(320))
             self?.menuBarSubtitle = ""
         }
+    }
+
+    private func pruneHistoryIfNeeded() throws {
+        let limit = max(settingsStore.historyLimit, 1)
+        let descriptor = FetchDescriptor<TranslationRecord>(
+            sortBy: [SortDescriptor(\TranslationRecord.createdAt, order: .reverse)]
+        )
+        let records = try modelContext.fetch(descriptor)
+        guard records.count > limit else { return }
+
+        for record in records.dropFirst(limit) {
+            modelContext.delete(record)
+        }
+
+        try modelContext.save()
     }
 }
 

@@ -26,10 +26,11 @@ struct HistoryWindowView: View {
                     }
                 }
                 .listStyle(.inset)
+                .scrollContentBackground(.hidden)
             }
         }
         .padding(.top, 8)
-        .background(Color.white)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private func delete(_ record: TranslationRecord) {

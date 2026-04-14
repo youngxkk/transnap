@@ -6,7 +6,9 @@
 //
 
 import AppKit
+import SwiftData
 import SwiftUI
+import Translation
 
 struct SettingsView: View {
     @ObservedObject var settingsStore: SettingsStore
@@ -54,20 +56,19 @@ struct SettingsView: View {
                     HStack(spacing: 12) {
                         Image(systemName: tab.icon)
                             .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(.white)
-                            .font(.system(size: 14, weight: .medium))
-                            .frame(width: 28, height: 28)
-                            .background(tab.color.gradient)
-                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .foregroundStyle(tab.color)
+                            .font(.system(size: 13, weight: .semibold))
+                            .frame(width: 26, height: 26)
+                            .background(tab.color.opacity(0.1), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                         
                         Text(tab.title)
-                            .font(.system(size: 13))
+                            .font(.system(size: 13, weight: selectedTab == tab ? .medium : .regular))
                     }
                     .padding(.vertical, 4)
                 }
             }
             .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 200)
+            .navigationSplitViewColumnWidth(min: 170, ideal: 185, max: 200)
         } detail: {
             ZStack {
                 Color(NSColor.windowBackgroundColor)
@@ -78,9 +79,9 @@ struct SettingsView: View {
                         VStack(alignment: .leading, spacing: 0) {
                             Text(tab.title)
                                 .font(.system(size: 24, weight: .bold))
-                                .padding(.horizontal, 30)
-                                .padding(.top, 30)
-                                .padding(.bottom, 20)
+                                .padding(.horizontal, 24)
+                                .padding(.top, 24)
+                                .padding(.bottom, 16)
                             
                             switch tab {
                             case .general:
@@ -90,72 +91,82 @@ struct SettingsView: View {
                             case .shortcut:
                                 ShortcutSettingsView(settingsStore: settingsStore)
                             case .offline:
-                                OfflineSettingsView(settingsStore: settingsStore)
+                                if #available(macOS 15.0, *) {
+                                    OfflineSettingsView(settingsStore: settingsStore)
+                                } else {
+                                    ContentUnavailableView("需要 macOS 15 或更新版本", systemImage: "exclamationmark.triangle")
+                                }
                             case .about:
                                 AboutSettingsView()
                             }
                         }
                     }
-                    .id(tab) // Force refresh on tab change
+                    .id(tab)
                 } else {
                     Text("请选择一个项目")
                         .foregroundStyle(.secondary)
                 }
             }
         }
-        .frame(width: 700, height: 500)
+        .frame(width: 760, height: 540)
+        .preferredColorScheme(settingsStore.appearance == .system ? nil : (settingsStore.appearance == .dark ? .dark : .light))
     }
 }
 
 // MARK: - General Tab
 struct GeneralSettingsView: View {
     @ObservedObject var settingsStore: SettingsStore
-    
+    @Environment(\.modelContext) private var modelContext
+    @Query private var history: [TranslationRecord]
+    @State private var showingClearHistoryAlert = false
+    @State private var clearHistoryErrorMessage: String?
+
     var body: some View {
         VStack(spacing: 24) {
             SettingsGroup(header: "外观") {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(spacing: 24) {
-                        AppearanceOption(title: "跟随系统", type: .system, current: $settingsStore.appearance)
-                        AppearanceOption(title: "浅色", type: .light, current: $settingsStore.appearance)
-                        AppearanceOption(title: "深色", type: .dark, current: $settingsStore.appearance)
-                    }
+                HStack(spacing: 20) {
+                    AppearanceOption(title: "跟随系统", type: .system, current: $settingsStore.appearance)
+                    AppearanceOption(title: "浅色", type: .light, current: $settingsStore.appearance)
+                    AppearanceOption(title: "深色", type: .dark, current: $settingsStore.appearance)
+                    Spacer()
                 }
-                .padding(.vertical, 8)
+                .padding(.vertical, 4)
             }
-            
-            SettingsGroup(header: "偏好设置") {
-                LabeledContent("显示语言") {
-                    Picker("", selection: $settingsStore.appLanguage) {
-                        Text("简体中文").tag("zh-Hans")
-                        Text("English").tag("en")
-                    }
-                    .frame(width: 140)
+
+
+            SettingsGroup(header: "启动行为", footer: settingsStore.launchAtLoginState.message) {
+                HStack {
+                    Toggle("跟随电脑启动", isOn: $settingsStore.launchAtLogin)
+                    Spacer()
                 }
-                
-                Divider()
-                
-                Toggle("跟随电脑启动", isOn: $settingsStore.launchAtLogin)
             }
-            
+
             SettingsGroup(header: "内容管理", footer: "历史记录仅保存在本地，Transnap 不会上传您的任何翻译数据。") {
-                LabeledContent("历史保留上限") {
-                    HStack {
+                LabeledContent {
+                    HStack(spacing: 12) {
                         Slider(value: Binding(
                             get: { Double(settingsStore.historyLimit) },
                             set: { settingsStore.historyLimit = Int($0) }
-                        ), in: 50...1000, step: 50)
-                        Text("\(settingsStore.historyLimit) 条")
-                            .monospacedDigit()
-                            .font(.system(size: 11, design: .monospaced))
-                            .frame(width: 60, alignment: .trailing)
+                        ), in: 10...200, step: 10)
+                        
+                        Text("\(settingsStore.historyLimit)")
+                            .font(.system(.body, design: .monospaced))
+                            .fontWeight(.medium)
+                            .frame(width: 36, alignment: .trailing)
+                        
+                        Text("条")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
                     }
+                } label: {
+                    Text("记录上限")
+                        .font(.system(size: 13))
                 }
                 
                 Divider()
                 
                 Button(role: .destructive) {
-                    settingsStore.clearAllHistory()
+                    showingClearHistoryAlert = true
                 } label: {
                     Text("立即清空所有历史记录")
                         .font(.system(size: 13, weight: .medium))
@@ -164,10 +175,40 @@ struct GeneralSettingsView: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.vertical, 4)
+                .disabled(history.isEmpty)
             }
         }
-        .padding(.horizontal, 30)
+        .padding(.horizontal, 24)
         .padding(.bottom, 40)
+        .alert("清空所有历史记录？", isPresented: $showingClearHistoryAlert) {
+            Button("取消", role: .cancel) {}
+            Button("清空", role: .destructive) {
+                clearAllHistory()
+            }
+        } message: {
+            Text("此操作会删除本地保存的全部翻译记录，且无法恢复。")
+        }
+        .alert("清空失败", isPresented: Binding(
+            get: { clearHistoryErrorMessage != nil },
+            set: { if !$0 { clearHistoryErrorMessage = nil } }
+        )) {
+            Button("知道了", role: .cancel) {}
+        } message: {
+            Text(clearHistoryErrorMessage ?? "")
+        }
+    }
+
+    private func clearAllHistory() {
+        do {
+            let records = try modelContext.fetch(FetchDescriptor<TranslationRecord>())
+            for record in records {
+                modelContext.delete(record)
+            }
+            try modelContext.save()
+            clearHistoryErrorMessage = nil
+        } catch {
+            clearHistoryErrorMessage = error.localizedDescription
+        }
     }
 }
 
@@ -184,10 +225,10 @@ struct SettingsGroup<Content: View>: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             if let header = header {
-                Text(header.uppercased())
-                    .font(.system(size: 11, weight: .semibold))
+                Text(header)
+                    .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(.secondary)
                     .padding(.leading, 4)
             }
@@ -195,12 +236,12 @@ struct SettingsGroup<Content: View>: View {
             VStack(alignment: .leading, spacing: 12) {
                 content
             }
-            .padding(16)
-            .background(Color(NSColor.controlBackgroundColor).opacity(0.4))
+            .padding(14)
+            .background(Color(NSColor.controlBackgroundColor).opacity(0.45))
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Color.primary.opacity(0.05), lineWidth: 1)
+                    .stroke(Color.primary.opacity(0.04), lineWidth: 0.5)
             )
             
             if let footer = footer {
@@ -208,6 +249,7 @@ struct SettingsGroup<Content: View>: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
                     .padding(.leading, 4)
+                    .padding(.top, -2)
             }
         }
     }
@@ -222,43 +264,70 @@ struct AppearanceOption: View {
     
     var body: some View {
         Button {
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                 current = type
             }
         } label: {
-            VStack(spacing: 8) {
+            VStack(spacing: 12) {
                 ZStack {
+                    // Preview content simulating a macOS window
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(backgroundColor)
-                        .frame(width: 80, height: 56)
-                        .shadow(color: .black.opacity(isSelected ? 0.15 : 0.05), radius: isSelected ? 4 : 2)
+                        .fill(previewBackground)
+                        .frame(width: 96, height: 64)
+                        .shadow(color: .black.opacity(isSelected ? 0.12 : 0.04), radius: isSelected ? 8 : 2, y: isSelected ? 4 : 1)
                     
                     if type == .system {
                         HStack(spacing: 0) {
-                            Rectangle().fill(Color.white).frame(width: 40)
-                            Rectangle().fill(Color.black.opacity(0.85)).frame(width: 40)
+                            Rectangle().fill(Color.white).frame(width: 48)
+                            Rectangle().fill(Color.black.opacity(0.85)).frame(width: 48)
                         }
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     }
                     
+                    // Decorative elements representing a mini window
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 3) {
+                            Circle().fill(Color.red.opacity(0.5)).frame(width: 4, height: 4)
+                            Circle().fill(Color.yellow.opacity(0.5)).frame(width: 4, height: 4)
+                            Circle().fill(Color.green.opacity(0.5)).frame(width: 4, height: 4)
+                            Spacer()
+                        }
+                        .padding(.top, 4)
+                        .padding(.leading, 6)
+                        
+                        Rectangle()
+                            .fill(isSelected ? Color.blue.opacity(0.15) : Color.primary.opacity(0.05))
+                            .frame(width: 50, height: 6)
+                            .cornerRadius(2)
+                            .padding(.leading, 6)
+                        
+                        Rectangle()
+                            .fill(Color.primary.opacity(0.03))
+                            .frame(height: 24)
+                            .padding(.horizontal, 6)
+                    }
+                    .frame(width: 96, height: 64, alignment: .top)
+                    
                     if isSelected {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(Color.blue, lineWidth: 3)
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .stroke(Color.blue, lineWidth: 2.5)
+                            .frame(width: 101, height: 69)
                     }
                 }
+                .scaleEffect(isSelected ? 1.02 : 1.0)
                 
                 Text(title)
-                    .font(.system(size: 12, weight: isSelected ? .medium : .regular))
+                    .font(.system(size: 11, weight: isSelected ? .medium : .regular))
                     .foregroundStyle(isSelected ? .primary : .secondary)
             }
         }
         .buttonStyle(.plain)
     }
     
-    private var backgroundColor: Color {
+    private var previewBackground: Color {
         switch type {
         case .light: return .white
-        case .dark: return .black.opacity(0.85)
+        case .dark: return Color(white: 0.15)
         case .system: return .clear
         }
     }
@@ -303,10 +372,12 @@ struct TranslationSettingsView: View {
                         }
                         .labelsHidden()
                     }
+                    
+                    Spacer()
                 }
             }
         }
-        .padding(.horizontal, 30)
+        .padding(.horizontal, 24)
     }
 }
 
@@ -333,127 +404,231 @@ struct ShortcutSettingsView: View {
                 }
             }
         }
-        .padding(.horizontal, 30)
+        .padding(.horizontal, 24)
     }
 }
 
 // MARK: - Offline Tab
+@available(macOS 15.0, *)
 struct OfflineSettingsView: View {
     @ObservedObject var settingsStore: SettingsStore
-    
-    let availableLanguages = [
-        ("zh-Hans", "简体中文", "320 MB"),
-        ("en", "英语", "280 MB"),
-        ("ja", "日语", "350 MB"),
-        ("ko", "韩语", "310 MB"),
-        ("fr", "法语", "410 MB"),
-        ("de", "德语", "390 MB"),
-        ("es", "西班牙语", "430 MB")
-    ]
+    @StateObject private var offlineLanguageManager = OfflineLanguageManager()
     
     var body: some View {
         VStack(spacing: 24) {
-            SettingsGroup(header: "原子化语言包", footer: "下载多个语言后，Transnap 即可在这些下载过的语言之间实现完全离线的互译。") {
+            SettingsGroup(header: "系统翻译语言包", footer: "这里显示的是系统翻译框架返回的真实安装状态。点击下载后会调用系统翻译资源准备流程。") {
                 VStack(spacing: 0) {
-                    ForEach(availableLanguages, id: \.0) { lang in
+                    if offlineLanguageManager.packs.isEmpty {
+                        Text("当前系统没有返回可管理的翻译语言。")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 8)
+                    }
+
+                    ForEach(Array(offlineLanguageManager.packs.enumerated()), id: \.element.id) { index, pack in
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(lang.1)
+                                Text(pack.name)
                                     .font(.system(size: 14, weight: .medium))
-                                Text(lang.2)
+                                Text(statusDescription(for: pack.identifier))
                                     .font(.system(size: 11))
                                     .foregroundStyle(.tertiary)
                             }
                             
                             Spacer()
                             
-                            let isDownloaded = settingsStore.downloadedLanguages.contains(lang.0)
-                            
-                            Button {
-                                withAnimation(.interactiveSpring()) {
-                                    settingsStore.toggleLanguageDownload(lang.0)
-                                }
-                            } label: {
-                                if isDownloaded {
-                                    HStack(spacing: 4) {
-                                        Text("已就绪")
-                                        Image(systemName: "checkmark.circle.fill")
-                                    }
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundStyle(.green)
-                                } else {
-                                    HStack(spacing: 4) {
-                                        Text("下载")
-                                        Image(systemName: "icloud.and.arrow.down")
-                                    }
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundStyle(.blue)
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(isDownloaded ? Color.green.opacity(0.1) : Color.blue.opacity(0.1))
-                            .clipShape(Capsule())
+                            actionButton(for: pack.identifier)
                         }
                         .padding(.vertical, 10)
                         
-                        if lang.0 != availableLanguages.last?.0 {
+                        if index < offlineLanguageManager.packs.count - 1 {
                             Divider()
                         }
                     }
                 }
             }
+
+            if let lastErrorMessage = offlineLanguageManager.lastErrorMessage {
+                Text(lastErrorMessage)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.orange)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
-        .padding(.horizontal, 30)
+        .padding(.horizontal, 24)
         .padding(.bottom, 40)
+        .task {
+            await offlineLanguageManager.refreshStatuses()
+        }
+        .translationTask(offlineLanguageManager.pendingConfiguration) { session in
+            await offlineLanguageManager.performPendingInstall(using: session)
+        }
+    }
+
+    @ViewBuilder
+    private func actionButton(for identifier: String) -> some View {
+        let status = offlineLanguageManager.statuses[identifier] ?? .unsupported
+        let isInstalling = offlineLanguageManager.isInstalling(identifier)
+
+        switch status {
+        case .installed:
+            HStack(spacing: 4) {
+                Text("已安装")
+                Image(systemName: "checkmark.circle.fill")
+            }
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.green)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.green.opacity(0.1))
+            .clipShape(Capsule())
+
+        case .supported:
+            Button {
+                offlineLanguageManager.requestInstall(for: identifier)
+            } label: {
+                HStack(spacing: 6) {
+                    if isInstalling {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "icloud.and.arrow.down")
+                    }
+                    Text(isInstalling ? "准备中" : "下载")
+                }
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.blue)
+            }
+            .buttonStyle(.plain)
+            .disabled(isInstalling)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.blue.opacity(0.1))
+            .clipShape(Capsule())
+
+        case .unsupported:
+            HStack(spacing: 4) {
+                Text("不可用")
+                Image(systemName: "xmark.circle")
+            }
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.secondary.opacity(0.1))
+            .clipShape(Capsule())
+        @unknown default:
+            HStack(spacing: 4) {
+                Text("未知状态")
+                Image(systemName: "questionmark.circle")
+            }
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.secondary.opacity(0.1))
+            .clipShape(Capsule())
+        }
+    }
+
+    private func statusDescription(for identifier: String) -> String {
+        switch offlineLanguageManager.statuses[identifier] ?? .unsupported {
+        case .installed:
+            return "已安装到系统翻译资源中"
+        case .supported:
+            return offlineLanguageManager.isInstalling(identifier) ? "正在请求系统下载..." : "支持下载，可离线使用"
+        case .unsupported:
+            return "当前系统不支持该语言资源"
+        @unknown default:
+            return "系统返回了未识别的语言包状态"
+        }
     }
 }
 
 // MARK: - About Tab
 struct AboutSettingsView: View {
+    @State private var iconScale: CGFloat = 1.0
+    
     var body: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 20) {
+            VStack(spacing: 24) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .fill(LinearGradient(colors: [.blue.opacity(0.8), .blue], startPoint: .top, endPoint: .bottom))
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .fill(LinearGradient(colors: [.blue.opacity(0.8), .indigo], startPoint: .topLeading, endPoint: .bottomTrailing))
                         .frame(width: 100, height: 100)
-                        .shadow(color: .blue.opacity(0.4), radius: 15, y: 8)
+                        .shadow(color: .blue.opacity(0.3), radius: 20, y: 10)
                     
                     Image(systemName: "character.bubble.fill")
-                        .font(.system(size: 56))
+                        .font(.system(size: 52))
                         .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.1), radius: 5)
+                }
+                .scaleEffect(iconScale)
+                .onAppear {
+                    withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                        iconScale = 1.05
+                    }
                 }
                 
                 VStack(spacing: 8) {
                     Text("Transnap")
-                        .font(.system(size: 32, weight: .bold, design: .rounded))
+                        .font(.system(size: 36, weight: .bold, design: .rounded))
+                        .foregroundStyle(.primary)
                     
                     Text("Version 1.2.0")
                         .font(.system(.subheadline, design: .monospaced))
-                        .foregroundStyle(.secondary)
+                        .opacity(0.6)
                 }
             }
-            .padding(.top, 40)
+            .padding(.top, 48)
             
             VStack(spacing: 12) {
                 Text("极致简单的贴心翻译")
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.system(size: 15, weight: .semibold))
+                
                 Text("基于 macOS 本地机器学习技术")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
-            .padding(.top, 30)
+            .padding(.top, 32)
             
             Spacer()
             
-            HStack(spacing: 24) {
-                AboutLink(title: "访问官网", url: "https://transnap.app")
-                AboutLink(title: "隐私政策", url: "https://transnap.app/privacy")
-                AboutLink(title: "开发者", url: "https://github.com/youngxkk")
+            VStack(spacing: 16) {
+                HStack(spacing: 24) {
+                    AboutLink(title: "用户协议", url: "https://maxc.cc/user-agreement/")
+                    AboutLink(title: "隐私政策", url: "https://maxc.cc/privacy-policy/")
+                    AboutLink(title: "使用条款", url: "https://maxc.cc/terms-of-use/")
+                }
+                
+                Button {
+                    openXiaohongshu()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "heart.circle.fill") // 小红书常用的心情/红心感
+                        Text("关注开发者 (小红书)")
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .onHover { isHovering in
+                    NSCursor.pointingHand.set()
+                }
             }
-            .padding(.bottom, 40)
+            .padding(.bottom, 48)
+        }
+    }
+    
+    private func openXiaohongshu() {
+        let appUrl = URL(string: "xhsdiscover://user/5777e1583460946ad6894dc4")!
+        let webUrl = URL(string: "https://xhslink.com/m/9T8pXxjXBQk")!
+        
+        if NSWorkspace.shared.urlForApplication(toOpen: appUrl) != nil {
+            NSWorkspace.shared.open(appUrl)
+        } else {
+            NSWorkspace.shared.open(webUrl)
         }
     }
 }
@@ -500,13 +675,13 @@ final class ShortcutRecorderField: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
-        layer?.cornerRadius = 8
-        layer?.backgroundColor = NSColor.white.cgColor
-        layer?.borderColor = NSColor.black.withAlphaComponent(0.08).cgColor
+        layer?.cornerRadius = 6
+        layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        layer?.borderColor = NSColor.textColor.withAlphaComponent(0.06).cgColor
         layer?.borderWidth = 1
 
         label.alignment = .center
-        label.font = .systemFont(ofSize: 13)
+        label.font = .monospacedSystemFont(ofSize: 12, weight: .medium)
         label.textColor = .secondaryLabelColor
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)

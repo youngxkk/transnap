@@ -9,6 +9,7 @@ import AppKit
 import SwiftData
 import SwiftUI
 
+@available(macOS 15.0, *)
 @MainActor
 final class WindowCoordinator {
     private let viewModel: TransnapViewModel
@@ -61,6 +62,7 @@ final class WindowCoordinator {
     func showSettingsWindow() {
         if settingsWindowController == nil {
             let content = SettingsView(settingsStore: settingsStore)
+                .modelContainer(modelContainer)
             settingsWindowController = makeWindowController(
                 title: "设置",
                 size: NSSize(width: 420, height: 320),

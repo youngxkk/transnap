@@ -8,6 +8,7 @@
 import SwiftUI
 import Translation
 
+@available(macOS 15.0, *)
 struct MenuBarRootView: View {
     @ObservedObject var viewModel: TransnapViewModel
     @ObservedObject var settingsStore: SettingsStore
@@ -20,15 +21,13 @@ struct MenuBarRootView: View {
             windowCoordinator: windowCoordinator
         )
         .frame(width: 360, height: settingsStore.menuBarPanelHeight)
-        .translationTask(viewModel.translationConfiguration) { session in
-            await viewModel.performTranslation(using: session)
-        }
         .onAppear {
             viewModel.handleMenuOpened()
         }
     }
 }
 
+@available(macOS 15.0, *)
 struct TranslatorWindowView: View {
     @ObservedObject var viewModel: TransnapViewModel
     @ObservedObject var settingsStore: SettingsStore
@@ -41,15 +40,13 @@ struct TranslatorWindowView: View {
             windowCoordinator: windowCoordinator
         )
         .frame(minWidth: 360, minHeight: 300)
-        .translationTask(viewModel.translationConfiguration) { session in
-            await viewModel.performTranslation(using: session)
-        }
         .onAppear {
             viewModel.handleMenuOpened()
         }
     }
 }
 
+@available(macOS 15.0, *)
 private struct TranslatorPanelView: View {
     @ObservedObject var viewModel: TransnapViewModel
     @ObservedObject var settingsStore: SettingsStore
@@ -58,6 +55,7 @@ private struct TranslatorPanelView: View {
     @State private var dragStartPanelHeight: Double?
     private let resizeHotspotSize: CGFloat = 18
     @State private var isHoveringCopy: Bool = false
+    @State private var showCopiedFeedback = false
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: true) {
@@ -70,8 +68,13 @@ private struct TranslatorPanelView: View {
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Color.white)
+        .background(.regularMaterial)
         .scrollBounceBehavior(.basedOnSize)
+        .animation(.spring(response: 0.34, dampingFraction: 0.86), value: viewModel.isTranslating)
+        .animation(.easeInOut(duration: 0.22), value: viewModel.translatedText)
+        .translationTask(viewModel.translationConfiguration) { session in
+            await viewModel.performTranslation(using: session)
+        }
         .overlay(alignment: .bottomTrailing) {
             Color.clear
                 .frame(width: resizeHotspotSize, height: resizeHotspotSize)
@@ -92,6 +95,20 @@ private struct TranslatorPanelView: View {
                             dragStartPanelHeight = nil
                         }
                 )
+        }
+        .onChange(of: viewModel.copyFeedbackToken) { _, _ in
+            guard !viewModel.translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+
+            withAnimation(.spring(response: 0.22, dampingFraction: 0.78)) {
+                showCopiedFeedback = true
+            }
+
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(600))
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showCopiedFeedback = false
+                }
+            }
         }
     }
 
@@ -153,10 +170,10 @@ private struct TranslatorPanelView: View {
     private var inputSection: some View {
         ZStack(alignment: .topLeading) {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.white)
+                .fill(.thinMaterial)
                 .overlay {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                        .strokeBorder(Color.primary.opacity(0.05), lineWidth: 0.5)
                 }
 
             AdaptiveTextEditor(
@@ -168,6 +185,7 @@ private struct TranslatorPanelView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
             .frame(height: inputEditorHeight)
+            .opacity(viewModel.isTranslating ? 0.68 : 1)
 
             if viewModel.inputText.isEmpty {
                 Text("输入或粘贴要翻译的文本")
@@ -180,7 +198,7 @@ private struct TranslatorPanelView: View {
     }
 
     private var actionRow: some View {
-        HStack(spacing: 10) {
+        HStack {
             Button("翻译") {
                 viewModel.requestTranslationFromInput()
             }
@@ -191,40 +209,94 @@ private struct TranslatorPanelView: View {
 
             Spacer()
 
-            Button {
-                viewModel.copyTranslatedText()
-            } label: {
-                Label("复制译文", systemImage: "doc.on.doc")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(isHoveringCopy && !viewModel.translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.black.opacity(0.05) : Color.clear, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            if !viewModel.translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                copyFloatingButton
+                    .transition(.opacity.combined(with: .scale(scale: 0.92)))
             }
-            .buttonStyle(.plain)
-            .onHover { isHoveringCopy = $0 }
-            .disabled(viewModel.translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            .opacity(viewModel.translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1.0)
         }
     }
 
     private var resultSection: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Text(viewModel.translatedText.isEmpty ? "翻译结果会显示在这里" : viewModel.translatedText)
-                    .textSelection(.enabled)
-                    .foregroundStyle(viewModel.translatedText.isEmpty ? .secondary : .primary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                if viewModel.isTranslating {
+                    translatingResultState
+                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                } else if viewModel.translatedText.isEmpty {
+                    Text("翻译结果会显示在这里")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .transition(.opacity)
+                } else {
+                    Text(viewModel.translatedText)
+                        .textSelection(.enabled)
+                        .foregroundStyle(.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .move(edge: .bottom)),
+                            removal: .opacity
+                        ))
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, 2)
         }
         .frame(minHeight: 120)
         .padding(12)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                .strokeBorder(Color.primary.opacity(0.05), lineWidth: 0.5)
         }
+    }
+
+    private var translatingResultState: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("正在生成译文")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                placeholderLine(width: 0.92)
+                placeholderLine(width: 0.84)
+                placeholderLine(width: 0.68)
+            }
+        }
+        .redacted(reason: .placeholder)
+    }
+
+    private func placeholderLine(width: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 4, style: .continuous)
+            .fill(Color.primary.opacity(0.08))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: 12)
+            .padding(.trailing, 140 * (1 - width))
+    }
+
+    private var copyFloatingButton: some View {
+        Button {
+            viewModel.copyTranslatedText()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: showCopiedFeedback ? "checkmark" : "doc.on.doc")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(showCopiedFeedback ? "已复制" : "复制译文")
+                    .font(.caption.weight(.medium))
+            }
+            .foregroundStyle(showCopiedFeedback ? Color.green : Color.secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                (showCopiedFeedback ? Color.green.opacity(0.12) : Color.black.opacity(isHoveringCopy ? 0.08 : 0.04)),
+                in: Capsule()
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { isHoveringCopy = $0 }
     }
 }
 

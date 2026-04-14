@@ -7,3 +7,5 @@ build/
 *.xcworkspace/
 node_modules/
 .antigravityignore
+.DerivedDataLocal/
+.swift-module-cache/

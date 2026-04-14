@@ -8,6 +8,7 @@
 import SwiftData
 import SwiftUI
 
+@available(macOS 15.0, *)
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
 
@@ -35,7 +36,8 @@ struct ContentView: View {
     }
 }
 
+@available(macOS 15.0, *)
 #Preview {
     ContentView()
-        .modelContainer(for: TranslationRecord.self, inMemory: true)
+        .modelContainer(for: [TranslationRecord.self as any PersistentModel.Type], inMemory: true)
 }

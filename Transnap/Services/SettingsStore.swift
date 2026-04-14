@@ -33,6 +33,26 @@ final class SettingsStore: ObservableObject {
     static let minMenuBarPanelHeight: Double = 300
     static let maxMenuBarPanelHeight: Double = 560
 
+    enum LaunchAtLoginState: Equatable {
+        case enabled
+        case disabled
+        case requiresApproval
+        case unavailable(String)
+
+        var message: String {
+            switch self {
+            case .enabled:
+                return "已开启，系统登录后会自动启动。"
+            case .disabled:
+                return "已关闭，需要时可手动启动。"
+            case .requiresApproval:
+                return "系统需要你在“登录项”里批准一次。"
+            case let .unavailable(message):
+                return message
+            }
+        }
+    }
+
     enum Appearance: String, CaseIterable, Identifiable {
         case system, light, dark
         var id: String { rawValue }
@@ -51,10 +71,6 @@ final class SettingsStore: ObservableObject {
 
     @Published var appearance: Appearance {
         didSet { defaults.set(appearance.rawValue, forKey: Keys.appearance) }
-    }
-
-    @Published var appLanguage: String {
-        didSet { defaults.set(appLanguage, forKey: Keys.appLanguage) }
     }
 
     @Published var launchAtLogin: Bool {
@@ -103,6 +119,8 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    @Published private(set) var launchAtLoginState: LaunchAtLoginState = .disabled
+
     var shortcutDisplayString: String {
         ShortcutFormatter.string(forKeyCode: shortcutKeyCode, modifiers: shortcutModifiers)
     }
@@ -114,12 +132,11 @@ final class SettingsStore: ObservableObject {
         let defaultShortcutModifiers = Int(UInt32(shiftKey) | UInt32(optionKey))
 
         self.downloadedLanguages = Set(defaults.stringArray(forKey: Keys.downloadedLanguages) ?? ["zh-Hans", "en"])
-        
+
         self.appearance = Appearance(rawValue: defaults.string(forKey: Keys.appearance) ?? "") ?? .system
-        self.appLanguage = defaults.string(forKey: Keys.appLanguage) ?? "zh-Hans"
         self.launchAtLogin = defaults.bool(forKey: Keys.launchAtLogin)
-        self.historyLimit = defaults.integer(forKey: Keys.historyLimit) == 0 ? 100 : defaults.integer(forKey: Keys.historyLimit)
-        
+        self.historyLimit = defaults.integer(forKey: Keys.historyLimit) == 0 ? 50 : defaults.integer(forKey: Keys.historyLimit)
+
         self.sourceLanguage = defaults.string(forKey: Keys.sourceLanguage) ?? "auto"
         self.targetLanguage = defaults.string(forKey: Keys.targetLanguage) ?? "auto"
 
@@ -138,22 +155,13 @@ final class SettingsStore: ObservableObject {
         )
     }
 
-    func toggleLanguageDownload(_ lang: String) {
-        if downloadedLanguages.contains(lang) {
-            downloadedLanguages.remove(lang)
-        } else {
-            downloadedLanguages.insert(lang)
-        }
-    }
-
     func updateShortcut(keyCode: UInt32, modifiers: UInt32) {
         shortcutKeyCode = keyCode
         shortcutModifiers = modifiers
     }
 
-    func clearAllHistory() {
-        // Placeholder for clearing history
-        print("Clearing all history...")
+    func updateLaunchAtLoginState(_ state: LaunchAtLoginState) {
+        launchAtLoginState = state
     }
 
     private static func clampMenuBarPanelHeight(_ value: Double) -> Double {
@@ -164,7 +172,6 @@ final class SettingsStore: ObservableObject {
 private enum Keys {
     static let downloadedLanguages = "settings.downloadedLanguages"
     static let appearance = "settings.appearance"
-    static let appLanguage = "settings.appLanguage"
     static let launchAtLogin = "settings.launchAtLogin"
     static let historyLimit = "settings.historyLimit"
     static let sourceLanguage = "settings.sourceLanguage"
