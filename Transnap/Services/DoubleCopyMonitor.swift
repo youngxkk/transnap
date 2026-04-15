@@ -7,6 +7,7 @@
 
 import AppKit
 import ApplicationServices
+import Combine
 
 final class DoubleCopyMonitor {
     private let threshold: TimeInterval
@@ -26,7 +27,7 @@ final class DoubleCopyMonitor {
 
     func start() {
         guard eventTap == nil else { return }
-        requestAccessibilityPermissionIfNeeded()
+        guard Self.isAccessibilityTrusted() else { return }
 
         let callback: CGEventTapCallBack = { proxy, type, event, userInfo in
             guard let userInfo else {
@@ -77,11 +78,6 @@ final class DoubleCopyMonitor {
         stop()
     }
 
-    private func requestAccessibilityPermissionIfNeeded() {
-        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-        _ = AXIsProcessTrustedWithOptions(options)
-    }
-
     private func handle(
         proxy: CGEventTapProxy,
         type: CGEventType,
@@ -118,5 +114,75 @@ final class DoubleCopyMonitor {
         }
 
         return Unmanaged.passUnretained(event)
+    }
+
+    static func isAccessibilityTrusted() -> Bool {
+        AXIsProcessTrusted()
+    }
+
+    static func openAccessibilitySettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else {
+            return
+        }
+
+        NSWorkspace.shared.open(url)
+    }
+}
+
+@MainActor
+final class DoubleCopyMonitorController {
+    private let settingsStore: SettingsStore
+    private let monitor: DoubleCopyMonitor
+    private var cancellables: Set<AnyCancellable> = []
+    private var observers: [NSObjectProtocol] = []
+
+    init(settingsStore: SettingsStore, monitor: DoubleCopyMonitor) {
+        self.settingsStore = settingsStore
+        self.monitor = monitor
+        bindSettings()
+        observeAppLifecycle()
+        refresh()
+    }
+
+    deinit {
+        for observer in observers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
+    private func bindSettings() {
+        settingsStore.$doubleCopyTranslationEnabled
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                self?.refresh()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func observeAppLifecycle() {
+        let notificationCenter = NotificationCenter.default
+        observers.append(
+            notificationCenter.addObserver(
+                forName: NSApplication.didBecomeActiveNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.refresh()
+            }
+        )
+    }
+
+    private func refresh() {
+        guard settingsStore.doubleCopyTranslationEnabled else {
+            monitor.stop()
+            return
+        }
+
+        guard DoubleCopyMonitor.isAccessibilityTrusted() else {
+            monitor.stop()
+            return
+        }
+
+        monitor.start()
     }
 }

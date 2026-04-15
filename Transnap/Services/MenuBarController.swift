@@ -37,6 +37,7 @@ final class MenuBarController: NSObject {
         configureStatusItem()
         configurePopover()
         bindState()
+        presentWelcomeIfNeededOnLaunch()
     }
 
     func togglePopover() {
@@ -51,7 +52,9 @@ final class MenuBarController: NSObject {
         guard let button = statusItem.button else { return }
 
         updatePopoverContentSize()
-        viewModel.handleMenuOpened()
+        if settingsStore.hasCompletedWelcomeFlow {
+            viewModel.handleMenuOpened()
+        }
         NSApp.activate(ignoringOtherApps: true)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .maxY)
     }
@@ -85,19 +88,21 @@ final class MenuBarController: NSObject {
     }
 
     private func bindState() {
-        viewModel.$menuBarSubtitle
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.updateStatusItemTitle()
-            }
-            .store(in: &cancellables)
-
         settingsStore.$menuBarPanelHeight
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.updatePopoverContentSize()
             }
             .store(in: &cancellables)
+    }
+
+    private func presentWelcomeIfNeededOnLaunch() {
+        guard settingsStore.hasCompletedWelcomeFlow == false else { return }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+            guard let self, self.popover.isShown == false else { return }
+            self.showPopover()
+        }
     }
 
     private func updateStatusItemTitle() {

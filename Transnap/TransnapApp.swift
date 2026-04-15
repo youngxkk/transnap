@@ -18,6 +18,7 @@ struct TransnapApp: App {
     private let settingsStore: SettingsStore
     private let appSettingsController: AppSettingsController?
     private let doubleCopyMonitor: DoubleCopyMonitor?
+    private let doubleCopyMonitorController: DoubleCopyMonitorController?
     private let hotkeyManager: GlobalHotkeyManager?
     private let menuBarController: MenuBarController?
     private let windowCoordinator: WindowCoordinator
@@ -57,6 +58,7 @@ struct TransnapApp: App {
         if Self.isRunningTests {
             appSettingsController = nil
             doubleCopyMonitor = nil
+            doubleCopyMonitorController = nil
             hotkeyManager = nil
             menuBarController = nil
         } else {
@@ -73,8 +75,11 @@ struct TransnapApp: App {
             let monitor = DoubleCopyMonitor {
                 rootViewModel.requestQuickClipboardTranslation()
             }
-            monitor.start()
             doubleCopyMonitor = monitor
+            doubleCopyMonitorController = DoubleCopyMonitorController(
+                settingsStore: settingsStore,
+                monitor: monitor
+            )
 
             let hotkeyManager = GlobalHotkeyManager(settingsStore: settingsStore)
             hotkeyManager.onTrigger = {

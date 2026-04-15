@@ -20,12 +20,9 @@ final class TransnapViewModel: ObservableObject {
     @Published var sourceText = ""
     @Published var statusMessage = "点击状态栏图标即可翻译剪贴板"
     @Published var isTranslating = false
-    @Published var menuBarSubtitle = ""
-    @Published var menuBarSubtitleOpacity = 0.0
     @Published var lastErrorMessage: String?
     @Published private(set) var copyFeedbackToken = 0
     private var pendingRequest: PendingTranslationRequest?
-    private var clearSubtitleTask: Task<Void, Never>?
     private let modelContext: ModelContext
     private let settingsStore: SettingsStore
 
@@ -113,10 +110,6 @@ final class TransnapViewModel: ObservableObject {
             translatedText = response.targetText
             statusMessage = "\(LanguageDirectionResolver.displayName(for: record.sourceLanguageIdentifier)) → \(LanguageDirectionResolver.displayName(for: record.targetLanguageIdentifier))"
             lastErrorMessage = nil
-
-            if request.trigger == .doubleCopy {
-                showMenuBarSubtitle(response.targetText)
-            }
         } catch is CancellationError {
             lastErrorMessage = nil
         } catch {
@@ -174,29 +167,6 @@ final class TransnapViewModel: ObservableObject {
             translationConfiguration = existingConfiguration
         } else {
             translationConfiguration = nextConfiguration
-        }
-    }
-
-    private func showMenuBarSubtitle(_ text: String) {
-        clearSubtitleTask?.cancel()
-        let subtitle = String(text.prefix(18))
-
-        withAnimation(.easeOut(duration: 0.18)) {
-            menuBarSubtitleOpacity = 0
-        }
-        menuBarSubtitle = subtitle
-
-        withAnimation(.easeOut(duration: 0.24)) {
-            menuBarSubtitleOpacity = 1
-        }
-
-        clearSubtitleTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(2.6))
-            withAnimation(.easeInOut(duration: 0.3)) {
-                self?.menuBarSubtitleOpacity = 0
-            }
-            try? await Task.sleep(for: .milliseconds(320))
-            self?.menuBarSubtitle = ""
         }
     }
 

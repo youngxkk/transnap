@@ -384,6 +384,7 @@ struct TranslationSettingsView: View {
 // MARK: - Shortcut Tab
 struct ShortcutSettingsView: View {
     @ObservedObject var settingsStore: SettingsStore
+    @State private var accessibilityTrusted = DoubleCopyMonitor.isAccessibilityTrusted()
     
     var body: some View {
         VStack(spacing: 24) {
@@ -403,8 +404,54 @@ struct ShortcutSettingsView: View {
                         .frame(width: 160, height: 32)
                 }
             }
+
+            SettingsGroup(
+                header: "双击 ⌘C",
+                footer: "默认关闭。开启后仅在你已授予辅助功能权限时生效，Transnap 不会自动申请该权限。"
+            ) {
+                Toggle("启用双击 ⌘C 快速翻译", isOn: $settingsStore.doubleCopyTranslationEnabled)
+
+                Divider()
+
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: accessibilityTrusted ? "checkmark.shield" : "exclamationmark.shield")
+                        .foregroundStyle(accessibilityTrusted ? .green : .orange)
+                        .frame(width: 20)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(accessibilityTrusted ? "辅助功能权限已授权" : "辅助功能权限未授权")
+                            .font(.system(size: 13, weight: .medium))
+
+                        Text(
+                            accessibilityTrusted
+                            ? "双击 ⌘C 功能可以正常使用。"
+                            : "如果你之后想启用这个功能，需要在系统设置 > 隐私与安全性 > 辅助功能里允许 Transnap。"
+                        )
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+                }
+
+                if !accessibilityTrusted {
+                    Button("打开辅助功能设置") {
+                        DoubleCopyMonitor.openAccessibilitySettings()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+            }
         }
         .padding(.horizontal, 24)
+        .onAppear(perform: refreshAccessibilityStatus)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            refreshAccessibilityStatus()
+        }
+    }
+
+    private func refreshAccessibilityStatus() {
+        accessibilityTrusted = DoubleCopyMonitor.isAccessibilityTrusted()
     }
 }
 
@@ -490,13 +537,14 @@ struct OfflineSettingsView: View {
             } label: {
                 HStack(spacing: 6) {
                     if isInstalling {
-                        ProgressView()
-                            .controlSize(.small)
+                        LoadingSpinner(size: 16, lineWidth: 1.8, tint: .blue)
+                            .fixedSize()
                     } else {
                         Image(systemName: "icloud.and.arrow.down")
                     }
                     Text(isInstalling ? "准备中" : "下载")
                 }
+                .fixedSize()
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.blue)
             }
@@ -549,6 +597,18 @@ struct OfflineSettingsView: View {
 // MARK: - About Tab
 struct AboutSettingsView: View {
     @State private var iconScale: CGFloat = 1.0
+
+    private var versionDescription: String {
+        let info = Bundle.main.infoDictionary
+        let shortVersion = info?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let buildNumber = info?["CFBundleVersion"] as? String ?? "1"
+
+        if shortVersion == buildNumber {
+            return "Version \(shortVersion)"
+        }
+
+        return "Version \(shortVersion) (\(buildNumber))"
+    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -576,7 +636,7 @@ struct AboutSettingsView: View {
                         .font(.system(size: 36, weight: .bold, design: .rounded))
                         .foregroundStyle(.primary)
                     
-                    Text("Version 1.2.0")
+                    Text(versionDescription)
                         .font(.system(.subheadline, design: .monospaced))
                         .opacity(0.6)
                 }
@@ -614,7 +674,11 @@ struct AboutSettingsView: View {
                 }
                 .buttonStyle(.plain)
                 .onHover { isHovering in
-                    NSCursor.pointingHand.set()
+                    if isHovering {
+                        NSCursor.pointingHand.push()
+                    } else {
+                        NSCursor.pop()
+                    }
                 }
             }
             .padding(.bottom, 48)

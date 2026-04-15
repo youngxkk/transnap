@@ -108,6 +108,18 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    @Published var doubleCopyTranslationEnabled: Bool {
+        didSet {
+            defaults.set(doubleCopyTranslationEnabled, forKey: Keys.doubleCopyTranslationEnabled)
+        }
+    }
+
+    @Published var hasCompletedWelcomeFlow: Bool {
+        didSet {
+            defaults.set(hasCompletedWelcomeFlow, forKey: Keys.hasCompletedWelcomeFlow)
+        }
+    }
+
     @Published var menuBarPanelHeight: Double {
         didSet {
             let clampedValue = Self.clampMenuBarPanelHeight(menuBarPanelHeight)
@@ -150,6 +162,9 @@ final class SettingsStore: ObservableObject {
         let storedModifiers = defaults.object(forKey: Keys.shortcutModifiers) as? Int
         self.shortcutModifiers = UInt32(storedModifiers ?? defaultShortcutModifiers)
 
+        self.doubleCopyTranslationEnabled = defaults.bool(forKey: Keys.doubleCopyTranslationEnabled)
+        self.hasCompletedWelcomeFlow = defaults.bool(forKey: Keys.hasCompletedWelcomeFlow)
+
         let storedMenuBarPanelHeight = defaults.object(forKey: Keys.menuBarPanelHeight) as? Double
         self.menuBarPanelHeight = Self.clampMenuBarPanelHeight(
             storedMenuBarPanelHeight ?? Self.defaultMenuBarPanelHeight
@@ -180,5 +195,7 @@ private enum Keys {
     static let preferredTargetLanguage = "settings.preferredTargetLanguage"
     static let shortcutKeyCode = "settings.shortcutKeyCode"
     static let shortcutModifiers = "settings.shortcutModifiers"
+    static let doubleCopyTranslationEnabled = "settings.doubleCopyTranslationEnabled"
+    static let hasCompletedWelcomeFlow = "settings.hasCompletedWelcomeFlow"
     static let menuBarPanelHeight = "settings.menuBarPanelHeight"
 }
