@@ -37,5 +37,4 @@ final class TranslationRecord {
 enum TranslationTrigger: String, Codable {
     case menuBarClick
     case manualInput
-    case doubleCopy
 }

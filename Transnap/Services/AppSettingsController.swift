@@ -86,11 +86,11 @@ final class AppSettingsController {
         case .notRegistered:
             settingsStore.updateLaunchAtLoginState(.disabled)
         case .notFound:
-            settingsStore.updateLaunchAtLoginState(.unavailable("当前构建环境不支持登录项注册。"))
+            settingsStore.updateLaunchAtLoginState(.unavailable("当前环境暂不支持“登录时自动打开”。"))
         case .requiresApproval:
             settingsStore.updateLaunchAtLoginState(.requiresApproval)
         @unknown default:
-            settingsStore.updateLaunchAtLoginState(.unavailable("当前系统没有返回可识别的登录项状态。"))
+            settingsStore.updateLaunchAtLoginState(.unavailable("暂时无法读取“登录时自动打开”的状态。"))
         }
     }
 
@@ -113,6 +113,6 @@ final class AppSettingsController {
     }
 
     private static func userFacingLaunchAtLoginError(from error: Error) -> String {
-        "登录项更新失败：\(error.localizedDescription)"
+        "设置“登录时自动打开”失败：\(error.localizedDescription)"
     }
 }

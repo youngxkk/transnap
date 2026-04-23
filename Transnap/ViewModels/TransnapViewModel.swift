@@ -67,17 +67,6 @@ final class TransnapViewModel: ObservableObject {
         queueTranslation(for: trimmed, trigger: .menuBarClick)
     }
 
-    func requestQuickClipboardTranslation() {
-        guard let clipboardText = ClipboardService.currentText() else {
-            statusMessage = "剪贴板里没有可翻译的文本"
-            lastErrorMessage = "当前剪贴板不是文本，已忽略。"
-            return
-        }
-
-        inputText = clipboardText
-        queueTranslation(for: clipboardText, trigger: .doubleCopy)
-    }
-
     func copyTranslatedText() {
         let trimmed = translatedText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }

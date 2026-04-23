@@ -5,6 +5,7 @@
 //  Created by Codex on 2026/4/10.
 //
 
+import AppKit
 import SwiftUI
 import Translation
 
@@ -79,55 +80,56 @@ private struct WelcomePanelView: View {
     @ObservedObject var settingsStore: SettingsStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            header
-            featureList
-            privacyNotice
+        ScrollView(.vertical, showsIndicators: true) {
+            VStack(alignment: .leading, spacing: 24) {
+                header
+                featureList
 
-            Spacer(minLength: 0)
-
-            Button("开始使用") {
-                settingsStore.hasCompletedWelcomeFlow = true
-                viewModel.handleMenuOpened()
+                Button("开始使用") {
+                    settingsStore.hasCompletedWelcomeFlow = true
+                    viewModel.handleMenuOpened()
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 220, height: 52)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Color(red: 0.05, green: 0.48, blue: 0.98))
+                )
+                .shadow(color: .blue.opacity(0.22), radius: 10, y: 5)
+                .padding(.top, 6)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.top, 30)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 20)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(20)
         .background(PanelBackgroundView())
+        .scrollBounceBehavior(.basedOnSize)
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .center, spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(.linearGradient(
-                            colors: [Color.accentColor.opacity(0.92), Color.accentColor.opacity(0.68)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ))
-                        .frame(width: 58, height: 58)
-
-                    Image(systemName: "translate")
-                        .font(.system(size: 26, weight: .semibold))
-                        .foregroundStyle(.white)
-                }
+                Image(nsImage: NSApplication.shared.applicationIconImage)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .frame(width: 58, height: 58)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("欢迎使用 Transnap")
                         .font(.system(size: 24, weight: .semibold))
 
-                    Text("更快开始，更少打断。")
+                    Text("打开就能翻译。")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
             }
-
-            Text("首次使用前，先了解两件事。")
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
         }
     }
 
@@ -136,8 +138,8 @@ private struct WelcomePanelView: View {
             welcomeRow(
                 symbol: "doc.on.clipboard",
                 tint: .blue,
-                title: "读取当前剪贴板文本",
-                message: "打开面板时会读取剪贴板中的文本，方便你直接开始翻译。"
+                title: "自动读取剪贴板",
+                message: "打开面板后会直接带入剪贴板文本。"
             )
 
             Divider()
@@ -146,38 +148,24 @@ private struct WelcomePanelView: View {
             welcomeRow(
                 symbol: "lock.shield",
                 tint: .green,
-                title: "仅本地翻译与本地存储",
-                message: "翻译过程和历史记录都保留在这台 Mac 上，不会上传到服务器。"
+                title: "仅在本机处理",
+                message: "翻译和历史记录都保存在这台 Mac 上。"
             )
 
             Divider()
                 .padding(.leading, 48)
 
             welcomeRow(
-                symbol: "sparkles",
+                symbol: "keyboard",
                 tint: .orange,
-                title: "随时从状态栏开始",
-                message: "点按状态栏图标即可翻译，也可以继续使用快捷键和历史记录。"
+                title: "快捷键快速打开",
+                message: "按 \(settingsStore.shortcutDisplayString) 即可打开翻译面板。"
             )
         }
         .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
-        }
-    }
-
-    private var privacyNotice: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "checkmark.seal")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .padding(.top, 1)
-
-            Text("开始使用后，你仍可在“设置”里查看权限状态、管理历史记录和调整快捷方式。")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -207,7 +195,7 @@ private struct WelcomePanelView: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 14)
+        .padding(.vertical, 16)
     }
 }
 

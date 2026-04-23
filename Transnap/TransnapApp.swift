@@ -17,8 +17,6 @@ struct TransnapApp: App {
     private let sharedModelContainer: ModelContainer
     private let settingsStore: SettingsStore
     private let appSettingsController: AppSettingsController?
-    private let doubleCopyMonitor: DoubleCopyMonitor?
-    private let doubleCopyMonitorController: DoubleCopyMonitorController?
     private let hotkeyManager: GlobalHotkeyManager?
     private let menuBarController: MenuBarController?
     private let windowCoordinator: WindowCoordinator
@@ -57,8 +55,6 @@ struct TransnapApp: App {
 
         if Self.isRunningTests {
             appSettingsController = nil
-            doubleCopyMonitor = nil
-            doubleCopyMonitorController = nil
             hotkeyManager = nil
             menuBarController = nil
         } else {
@@ -72,15 +68,6 @@ struct TransnapApp: App {
             )
             self.menuBarController = menuBarController
 
-            let monitor = DoubleCopyMonitor {
-                rootViewModel.requestQuickClipboardTranslation()
-            }
-            doubleCopyMonitor = monitor
-            doubleCopyMonitorController = DoubleCopyMonitorController(
-                settingsStore: settingsStore,
-                monitor: monitor
-            )
-
             let hotkeyManager = GlobalHotkeyManager(settingsStore: settingsStore)
             hotkeyManager.onTrigger = {
                 menuBarController.togglePopover()
@@ -89,6 +76,7 @@ struct TransnapApp: App {
         }
     }
 
+    @SceneBuilder
     var body: some Scene {
         Settings {
             SettingsView(settingsStore: settingsStore)

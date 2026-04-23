@@ -23,7 +23,7 @@ struct SettingsView: View {
             case .general: return "常规"
             case .translation: return "翻译"
             case .shortcut: return "快捷键"
-            case .offline: return "离线模型"
+            case .offline: return "离线翻译"
             case .about: return "关于"
             }
         }
@@ -31,20 +31,10 @@ struct SettingsView: View {
         var icon: String {
             switch self {
             case .general: return "gearshape"
-            case .translation: return "character.bubble"
+            case .translation: return "translate"
             case .shortcut: return "keyboard"
             case .offline: return "shippingbox"
             case .about: return "info.circle"
-            }
-        }
-        
-        var color: Color {
-            switch self {
-            case .general: return .blue
-            case .translation: return .green
-            case .shortcut: return .orange
-            case .offline: return .indigo
-            case .about: return .gray
             }
         }
     }
@@ -55,14 +45,12 @@ struct SettingsView: View {
                 NavigationLink(value: tab) {
                     HStack(spacing: 12) {
                         Image(systemName: tab.icon)
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(tab.color)
-                            .font(.system(size: 13, weight: .semibold))
-                            .frame(width: 26, height: 26)
-                            .background(tab.color.opacity(0.1), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .foregroundStyle(.secondary)
+                            .font(.system(size: 15, weight: .regular))
+                            .frame(width: 18, alignment: .center)
                         
                         Text(tab.title)
-                            .font(.system(size: 13, weight: selectedTab == tab ? .medium : .regular))
+                            .font(.system(size: 13, weight: .regular))
                     }
                     .padding(.vertical, 4)
                 }
@@ -134,14 +122,14 @@ struct GeneralSettingsView: View {
             }
 
 
-            SettingsGroup(header: "启动行为", footer: settingsStore.launchAtLoginState.message) {
+            SettingsGroup(header: "启动", footer: settingsStore.launchAtLoginState.message) {
                 HStack {
-                    Toggle("跟随电脑启动", isOn: $settingsStore.launchAtLogin)
+                    Toggle("登录时自动打开", isOn: $settingsStore.launchAtLogin)
                     Spacer()
                 }
             }
 
-            SettingsGroup(header: "内容管理", footer: "历史记录仅保存在本地，Transnap 不会上传您的任何翻译数据。") {
+            SettingsGroup(header: "历史记录", footer: "历史记录只保存在这台 Mac 上，不会上传。") {
                 LabeledContent {
                     HStack(spacing: 12) {
                         Slider(value: Binding(
@@ -159,7 +147,7 @@ struct GeneralSettingsView: View {
                             .foregroundStyle(.secondary)
                     }
                 } label: {
-                    Text("记录上限")
+                    Text("最多保存")
                         .font(.system(size: 13))
                 }
                 
@@ -168,7 +156,7 @@ struct GeneralSettingsView: View {
                 Button(role: .destructive) {
                     showingClearHistoryAlert = true
                 } label: {
-                    Text("立即清空所有历史记录")
+                    Text("清空历史记录")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(.red)
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -180,13 +168,13 @@ struct GeneralSettingsView: View {
         }
         .padding(.horizontal, 24)
         .padding(.bottom, 40)
-        .alert("清空所有历史记录？", isPresented: $showingClearHistoryAlert) {
+        .alert("清空历史记录？", isPresented: $showingClearHistoryAlert) {
             Button("取消", role: .cancel) {}
             Button("清空", role: .destructive) {
                 clearAllHistory()
             }
         } message: {
-            Text("此操作会删除本地保存的全部翻译记录，且无法恢复。")
+            Text("这会删除这台 Mac 上的全部翻译记录，且无法恢复。")
         }
         .alert("清空失败", isPresented: Binding(
             get: { clearHistoryErrorMessage != nil },
@@ -349,10 +337,10 @@ struct TranslationSettingsView: View {
     
     var body: some View {
         VStack(spacing: 24) {
-            SettingsGroup(header: "语言方向", footer: "当选择“自动检测”时，Transnap 会根据识别到的原文自动判断目标语言。") {
+            SettingsGroup(header: "翻译方向", footer: "原文选“自动检测”时，Transnap 会自动识别语言。") {
                 HStack(spacing: 0) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("原文").font(.caption2).foregroundStyle(.secondary)
+                        Text("原文语言").font(.caption2).foregroundStyle(.secondary)
                         Picker("", selection: $settingsStore.sourceLanguage) {
                             ForEach(languages, id: \.0) { opt in Text(opt.1).tag(opt.0) }
                         }
@@ -366,7 +354,7 @@ struct TranslationSettingsView: View {
                         .padding(.top, 18)
                     
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("译文").font(.caption2).foregroundStyle(.secondary)
+                        Text("翻译成").font(.caption2).foregroundStyle(.secondary)
                         Picker("", selection: $settingsStore.targetLanguage) {
                             ForEach(languages, id: \.0) { opt in Text(opt.1).tag(opt.0) }
                         }
@@ -384,16 +372,15 @@ struct TranslationSettingsView: View {
 // MARK: - Shortcut Tab
 struct ShortcutSettingsView: View {
     @ObservedObject var settingsStore: SettingsStore
-    @State private var accessibilityTrusted = DoubleCopyMonitor.isAccessibilityTrusted()
     
     var body: some View {
         VStack(spacing: 24) {
-            SettingsGroup(header: "全局快捷键") {
+            SettingsGroup(header: "打开窗口快捷键") {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("唤起主面板")
+                        Text("打开翻译窗口")
                             .font(.system(size: 13, weight: .medium))
-                        Text("双击 ⌘C 之后，也可通过此快捷键手动唤起。")
+                        Text("你可以用这个快捷键直接打开窗口。")
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
@@ -404,54 +391,8 @@ struct ShortcutSettingsView: View {
                         .frame(width: 160, height: 32)
                 }
             }
-
-            SettingsGroup(
-                header: "双击 ⌘C",
-                footer: "默认关闭。开启后仅在你已授予辅助功能权限时生效，Transnap 不会自动申请该权限。"
-            ) {
-                Toggle("启用双击 ⌘C 快速翻译", isOn: $settingsStore.doubleCopyTranslationEnabled)
-
-                Divider()
-
-                HStack(alignment: .top, spacing: 12) {
-                    Image(systemName: accessibilityTrusted ? "checkmark.shield" : "exclamationmark.shield")
-                        .foregroundStyle(accessibilityTrusted ? .green : .orange)
-                        .frame(width: 20)
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(accessibilityTrusted ? "辅助功能权限已授权" : "辅助功能权限未授权")
-                            .font(.system(size: 13, weight: .medium))
-
-                        Text(
-                            accessibilityTrusted
-                            ? "双击 ⌘C 功能可以正常使用。"
-                            : "如果你之后想启用这个功能，需要在系统设置 > 隐私与安全性 > 辅助功能里允许 Transnap。"
-                        )
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-                }
-
-                if !accessibilityTrusted {
-                    Button("打开辅助功能设置") {
-                        DoubleCopyMonitor.openAccessibilitySettings()
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-            }
         }
         .padding(.horizontal, 24)
-        .onAppear(perform: refreshAccessibilityStatus)
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            refreshAccessibilityStatus()
-        }
-    }
-
-    private func refreshAccessibilityStatus() {
-        accessibilityTrusted = DoubleCopyMonitor.isAccessibilityTrusted()
     }
 }
 
@@ -463,10 +404,10 @@ struct OfflineSettingsView: View {
     
     var body: some View {
         VStack(spacing: 24) {
-            SettingsGroup(header: "系统翻译语言包", footer: "这里显示的是系统翻译框架返回的真实安装状态。点击下载后会调用系统翻译资源准备流程。") {
+            SettingsGroup(header: "离线语言包", footer: "下载后，没有网络也能翻译。这些语言包由 macOS 提供和管理。") {
                 VStack(spacing: 0) {
                     if offlineLanguageManager.packs.isEmpty {
-                        Text("当前系统没有返回可管理的翻译语言。")
+                        Text("当前没有可下载的语言包。")
                             .font(.system(size: 13))
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -521,7 +462,7 @@ struct OfflineSettingsView: View {
         switch status {
         case .installed:
             HStack(spacing: 4) {
-                Text("已安装")
+                Text("已下载")
                 Image(systemName: "checkmark.circle.fill")
             }
             .font(.system(size: 12, weight: .medium))
@@ -542,7 +483,7 @@ struct OfflineSettingsView: View {
                     } else {
                         Image(systemName: "icloud.and.arrow.down")
                     }
-                    Text(isInstalling ? "准备中" : "下载")
+                    Text(isInstalling ? "下载中" : "下载")
                 }
                 .fixedSize()
                 .font(.system(size: 12, weight: .medium))
@@ -557,7 +498,7 @@ struct OfflineSettingsView: View {
 
         case .unsupported:
             HStack(spacing: 4) {
-                Text("不可用")
+                Text("不支持")
                 Image(systemName: "xmark.circle")
             }
             .font(.system(size: 12, weight: .medium))
@@ -568,7 +509,7 @@ struct OfflineSettingsView: View {
             .clipShape(Capsule())
         @unknown default:
             HStack(spacing: 4) {
-                Text("未知状态")
+                Text("状态未知")
                 Image(systemName: "questionmark.circle")
             }
             .font(.system(size: 12, weight: .medium))
@@ -583,13 +524,13 @@ struct OfflineSettingsView: View {
     private func statusDescription(for identifier: String) -> String {
         switch offlineLanguageManager.statuses[identifier] ?? .unsupported {
         case .installed:
-            return "已安装到系统翻译资源中"
+            return "已下载，可离线使用"
         case .supported:
-            return offlineLanguageManager.isInstalling(identifier) ? "正在请求系统下载..." : "支持下载，可离线使用"
+            return offlineLanguageManager.isInstalling(identifier) ? "正在下载..." : "可下载，下载后可离线使用"
         case .unsupported:
-            return "当前系统不支持该语言资源"
+            return "暂不支持离线使用"
         @unknown default:
-            return "系统返回了未识别的语言包状态"
+            return "暂时无法确认状态"
         }
     }
 }
@@ -613,17 +554,13 @@ struct AboutSettingsView: View {
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 24) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .fill(LinearGradient(colors: [.blue.opacity(0.8), .indigo], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 100, height: 100)
-                        .shadow(color: .blue.opacity(0.3), radius: 20, y: 10)
-                    
-                    Image(systemName: "character.bubble.fill")
-                        .font(.system(size: 52))
-                        .foregroundStyle(.white)
-                        .shadow(color: .black.opacity(0.1), radius: 5)
-                }
+                Image(nsImage: NSApplication.shared.applicationIconImage)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .frame(width: 100, height: 100)
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .shadow(color: .black.opacity(0.16), radius: 18, y: 10)
                 .scaleEffect(iconScale)
                 .onAppear {
                     withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
@@ -644,10 +581,10 @@ struct AboutSettingsView: View {
             .padding(.top, 48)
             
             VStack(spacing: 12) {
-                Text("极致简单的贴心翻译")
+                Text("复制一下，马上翻译")
                     .font(.system(size: 15, weight: .semibold))
                 
-                Text("基于 macOS 本地机器学习技术")
+                Text("翻译和记录都留在这台 Mac 上")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }

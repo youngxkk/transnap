@@ -43,11 +43,11 @@ final class SettingsStore: ObservableObject {
         var message: String {
             switch self {
             case .enabled:
-                return "已开启，系统登录后会自动启动。"
+                return "已开启，登录 Mac 后会自动打开。"
             case .disabled:
-                return "已关闭，需要时可手动启动。"
+                return "已关闭，你可以随时手动打开。"
             case .requiresApproval:
-                return "系统需要你在“登录项”里批准一次。"
+                return "还需要你去系统“登录项”里确认一次。"
             case let .unavailable(message):
                 return message
             }
@@ -108,15 +108,14 @@ final class SettingsStore: ObservableObject {
         }
     }
 
-    @Published var doubleCopyTranslationEnabled: Bool {
-        didSet {
-            defaults.set(doubleCopyTranslationEnabled, forKey: Keys.doubleCopyTranslationEnabled)
-        }
-    }
-
     @Published var hasCompletedWelcomeFlow: Bool {
         didSet {
             defaults.set(hasCompletedWelcomeFlow, forKey: Keys.hasCompletedWelcomeFlow)
+            if hasCompletedWelcomeFlow {
+                defaults.set(currentBuildNumber, forKey: Keys.lastCompletedWelcomeBuild)
+            } else {
+                defaults.removeObject(forKey: Keys.lastCompletedWelcomeBuild)
+            }
         }
     }
 
@@ -139,10 +138,14 @@ final class SettingsStore: ObservableObject {
     }
 
     private let defaults: UserDefaults
+    private let currentBuildNumber: String
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, appBuild: String? = nil) {
         self.defaults = defaults
-        let defaultShortcutModifiers = Int(UInt32(shiftKey) | UInt32(optionKey))
+        self.currentBuildNumber = appBuild ?? Self.resolveCurrentBuildNumber()
+        let defaultShortcutKeyCode = Int(kVK_ANSI_T)
+        let oldDefaultShortcutModifiers = Int(UInt32(shiftKey) | UInt32(optionKey))
+        let defaultShortcutModifiers = Int(UInt32(shiftKey) | UInt32(controlKey))
 
         self.downloadedLanguages = Set(defaults.stringArray(forKey: Keys.downloadedLanguages) ?? ["zh-Hans", "en"])
 
@@ -157,13 +160,42 @@ final class SettingsStore: ObservableObject {
         self.preferredTargetLanguage = PreferredTargetLanguage(rawValue: preferredTargetRawValue ?? "") ?? .automatic
 
         let storedKeyCode = defaults.object(forKey: Keys.shortcutKeyCode) as? Int
-        self.shortcutKeyCode = UInt32(storedKeyCode ?? kVK_ANSI_T)
-
         let storedModifiers = defaults.object(forKey: Keys.shortcutModifiers) as? Int
-        self.shortcutModifiers = UInt32(storedModifiers ?? defaultShortcutModifiers)
+        let shouldMigrateOldDefaultShortcut =
+            storedKeyCode == defaultShortcutKeyCode &&
+            storedModifiers == oldDefaultShortcutModifiers
+        let resolvedShortcutKeyCode = shouldMigrateOldDefaultShortcut
+            ? defaultShortcutKeyCode
+            : (storedKeyCode ?? defaultShortcutKeyCode)
+        let resolvedShortcutModifiers = shouldMigrateOldDefaultShortcut
+            ? defaultShortcutModifiers
+            : (storedModifiers ?? defaultShortcutModifiers)
+        self.shortcutKeyCode = UInt32(resolvedShortcutKeyCode)
+        self.shortcutModifiers = UInt32(resolvedShortcutModifiers)
 
-        self.doubleCopyTranslationEnabled = defaults.bool(forKey: Keys.doubleCopyTranslationEnabled)
-        self.hasCompletedWelcomeFlow = defaults.bool(forKey: Keys.hasCompletedWelcomeFlow)
+        if shouldMigrateOldDefaultShortcut {
+            defaults.set(resolvedShortcutKeyCode, forKey: Keys.shortcutKeyCode)
+            defaults.set(resolvedShortcutModifiers, forKey: Keys.shortcutModifiers)
+        }
+
+        let hasCompletedWelcomeFlow = defaults.bool(forKey: Keys.hasCompletedWelcomeFlow)
+        let lastCompletedWelcomeBuild = defaults.string(forKey: Keys.lastCompletedWelcomeBuild)
+        let shouldMigrateWelcomeBuild = hasCompletedWelcomeFlow && lastCompletedWelcomeBuild == nil
+        let shouldShowWelcomeForCurrentBuild: Bool
+
+        if shouldMigrateWelcomeBuild {
+            defaults.set(currentBuildNumber, forKey: Keys.lastCompletedWelcomeBuild)
+            shouldShowWelcomeForCurrentBuild = false
+        } else {
+            shouldShowWelcomeForCurrentBuild =
+                hasCompletedWelcomeFlow == false || lastCompletedWelcomeBuild != currentBuildNumber
+        }
+
+        self.hasCompletedWelcomeFlow = !shouldShowWelcomeForCurrentBuild
+
+        if shouldShowWelcomeForCurrentBuild {
+            defaults.set(false, forKey: Keys.hasCompletedWelcomeFlow)
+        }
 
         let storedMenuBarPanelHeight = defaults.object(forKey: Keys.menuBarPanelHeight) as? Double
         self.menuBarPanelHeight = Self.clampMenuBarPanelHeight(
@@ -183,6 +215,10 @@ final class SettingsStore: ObservableObject {
     private static func clampMenuBarPanelHeight(_ value: Double) -> Double {
         min(max(value, minMenuBarPanelHeight), maxMenuBarPanelHeight)
     }
+
+    private static func resolveCurrentBuildNumber(bundle: Bundle = .main) -> String {
+        bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
+    }
 }
 
 private enum Keys {
@@ -195,7 +231,7 @@ private enum Keys {
     static let preferredTargetLanguage = "settings.preferredTargetLanguage"
     static let shortcutKeyCode = "settings.shortcutKeyCode"
     static let shortcutModifiers = "settings.shortcutModifiers"
-    static let doubleCopyTranslationEnabled = "settings.doubleCopyTranslationEnabled"
     static let hasCompletedWelcomeFlow = "settings.hasCompletedWelcomeFlow"
+    static let lastCompletedWelcomeBuild = "settings.lastCompletedWelcomeBuild"
     static let menuBarPanelHeight = "settings.menuBarPanelHeight"
 }

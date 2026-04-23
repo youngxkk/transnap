@@ -17,6 +17,7 @@ final class MenuBarController: NSObject {
     private let settingsStore: SettingsStore
     private let windowCoordinator: WindowCoordinator
     private let modelContainer: ModelContainer
+    private let showsWelcomeOnLaunch: Bool
     private let statusItem: NSStatusItem
     private let popover = NSPopover()
     private var cancellables: Set<AnyCancellable> = []
@@ -25,12 +26,14 @@ final class MenuBarController: NSObject {
         viewModel: TransnapViewModel,
         settingsStore: SettingsStore,
         windowCoordinator: WindowCoordinator,
-        modelContainer: ModelContainer
+        modelContainer: ModelContainer,
+        showsWelcomeOnLaunch: Bool = true
     ) {
         self.viewModel = viewModel
         self.settingsStore = settingsStore
         self.windowCoordinator = windowCoordinator
         self.modelContainer = modelContainer
+        self.showsWelcomeOnLaunch = showsWelcomeOnLaunch
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
 
@@ -62,15 +65,27 @@ final class MenuBarController: NSObject {
     private func configureStatusItem() {
         guard let button = statusItem.button else { return }
 
-        button.image = NSImage(
-            systemSymbolName: "character.bubble",
-            accessibilityDescription: "Transnap"
-        )
-        button.imagePosition = .imageLeading
+        button.image = statusBarImage()
+        button.imagePosition = .imageOnly
+        button.imageScaling = .scaleProportionallyDown
         button.target = self
         button.action = #selector(togglePopoverFromStatusItem)
         button.sendAction(on: [.leftMouseUp])
         updateStatusItemTitle()
+    }
+
+    private func statusBarImage() -> NSImage? {
+        if let image = NSImage(named: "StatusBarIcon") {
+            image.isTemplate = true
+            return image
+        }
+
+        let fallbackImage = NSImage(
+            systemSymbolName: "translate",
+            accessibilityDescription: "Transnap"
+        )
+        fallbackImage?.isTemplate = true
+        return fallbackImage
     }
 
     private func configurePopover() {
@@ -97,6 +112,7 @@ final class MenuBarController: NSObject {
     }
 
     private func presentWelcomeIfNeededOnLaunch() {
+        guard showsWelcomeOnLaunch else { return }
         guard settingsStore.hasCompletedWelcomeFlow == false else { return }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
@@ -119,3 +135,15 @@ final class MenuBarController: NSObject {
         togglePopover()
     }
 }
+
+#if DEBUG
+extension MenuBarController {
+    var debugHasStatusItemButton: Bool {
+        statusItem.button != nil
+    }
+
+    var debugIsPopoverShown: Bool {
+        popover.isShown
+    }
+}
+#endif
