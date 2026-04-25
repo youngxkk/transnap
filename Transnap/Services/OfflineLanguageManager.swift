@@ -104,6 +104,23 @@ final class OfflineLanguageManager: ObservableObject {
         }
     }
 
+    func requestInstallIfNeeded(for identifier: String) async {
+        guard identifier != "auto" else { return }
+        guard installState == .idle || isInstalling(identifier) else { return }
+
+        let language = Locale.Language(identifier: identifier)
+        let status: LanguageAvailability.Status
+        if let existingStatus = statuses[identifier] {
+            status = existingStatus
+        } else {
+            status = await availability.status(from: language, to: nil)
+        }
+        statuses[identifier] = status
+
+        guard status == .supported, !isInstalling(identifier) else { return }
+        requestInstall(for: identifier)
+    }
+
     func isInstalling(_ identifier: String) -> Bool {
         installState == .installing(identifier)
     }

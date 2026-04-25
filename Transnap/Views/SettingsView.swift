@@ -324,43 +324,37 @@ struct AppearanceOption: View {
 // MARK: - Translation Tab
 struct TranslationSettingsView: View {
     @ObservedObject var settingsStore: SettingsStore
-    
-    let languages = [
-        ("auto", "自动检测"),
-        ("zh-Hans", "简体中文"),
-        ("en", "英语"),
-        ("ja", "日语"),
-        ("ko", "韩语"),
-        ("fr", "法语"),
-        ("de", "德语")
-    ]
-    
+
     var body: some View {
         VStack(spacing: 24) {
-            SettingsGroup(header: "翻译方向", footer: "原文选“自动检测”时，Transnap 会自动识别语言。") {
+            SettingsGroup(header: "自动识别主要语言", footer: "自动检测只会在这两种语言之间判断；其它语言需要在翻译面板里手动指定。") {
                 HStack(spacing: 0) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("原文语言").font(.caption2).foregroundStyle(.secondary)
-                        Picker("", selection: $settingsStore.sourceLanguage) {
-                            ForEach(languages, id: \.0) { opt in Text(opt.1).tag(opt.0) }
+                        Text("我的语言").font(.caption2).foregroundStyle(.secondary)
+                        Picker("", selection: $settingsStore.primaryAutoDetectionLanguage) {
+                            ForEach(TranslationLanguageOptions.autoDetectionCandidates) { option in
+                                Text(option.title).tag(option.identifier)
+                            }
                         }
                         .labelsHidden()
                     }
-                    
-                    Image(systemName: "arrow.right")
+
+                    Image(systemName: "arrow.left.arrow.right")
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(.blue.opacity(0.5))
                         .padding(.horizontal, 20)
                         .padding(.top, 18)
-                    
+
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("翻译成").font(.caption2).foregroundStyle(.secondary)
-                        Picker("", selection: $settingsStore.targetLanguage) {
-                            ForEach(languages, id: \.0) { opt in Text(opt.1).tag(opt.0) }
+                        Text("常用互译语言").font(.caption2).foregroundStyle(.secondary)
+                        Picker("", selection: $settingsStore.secondaryAutoDetectionLanguage) {
+                            ForEach(TranslationLanguageOptions.autoDetectionCandidates) { option in
+                                Text(option.title).tag(option.identifier)
+                            }
                         }
                         .labelsHidden()
                     }
-                    
+
                     Spacer()
                 }
             }

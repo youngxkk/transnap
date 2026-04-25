@@ -125,7 +125,7 @@ final class TransnapViewModel: ObservableObject {
             for: text,
             sourceLanguage: settingsStore.sourceLanguage,
             targetLanguage: settingsStore.targetLanguage,
-            preferredTargetLanguage: settingsStore.preferredTargetLanguage
+            automaticLanguageIdentifiers: settingsStore.autoDetectionLanguageIdentifiers
         ) else {
             statusMessage = "无法识别语言"
             lastErrorMessage = "系统未能识别文本语言。"
@@ -141,7 +141,6 @@ final class TransnapViewModel: ObservableObject {
 
         sourceText = text
         translatedText = ""
-        statusMessage = "翻译中..."
         isTranslating = true
         lastErrorMessage = nil
 

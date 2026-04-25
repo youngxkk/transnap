@@ -28,6 +28,51 @@ enum PreferredTargetLanguage: String, CaseIterable, Identifiable {
     }
 }
 
+struct TranslationLanguageOption: Identifiable, Hashable {
+    let identifier: String
+    let title: String
+
+    var id: String { identifier }
+}
+
+enum TranslationLanguageOptions {
+    static let automaticIdentifier = "auto"
+    static let defaultPrimaryAutoDetectionLanguage = "zh-Hans"
+    static let defaultSecondaryAutoDetectionLanguage = "en"
+
+    static let all: [TranslationLanguageOption] = [
+        TranslationLanguageOption(identifier: automaticIdentifier, title: "自动检测"),
+        TranslationLanguageOption(identifier: "zh-Hans", title: "简体中文"),
+        TranslationLanguageOption(identifier: "en", title: "英语"),
+        TranslationLanguageOption(identifier: "ja", title: "日语"),
+        TranslationLanguageOption(identifier: "ko", title: "韩语"),
+        TranslationLanguageOption(identifier: "fr", title: "法语"),
+        TranslationLanguageOption(identifier: "de", title: "德语"),
+    ]
+
+    static let autoDetectionCandidates: [TranslationLanguageOption] = all.filter {
+        $0.identifier != automaticIdentifier
+    }
+
+    static func title(for identifier: String) -> String {
+        all.first(where: { $0.identifier == identifier })?.title ?? identifier
+    }
+
+    static func normalizedAutoDetectionLanguage(_ identifier: String?, fallback: String) -> String {
+        guard let identifier,
+              autoDetectionCandidates.contains(where: { $0.identifier == identifier }) else {
+            return fallback
+        }
+
+        return identifier
+    }
+
+    static func fallbackAutoDetectionLanguage(excluding identifier: String) -> String {
+        autoDetectionCandidates.first(where: { $0.identifier != identifier })?.identifier
+            ?? defaultSecondaryAutoDetectionLanguage
+    }
+}
+
 @MainActor
 final class SettingsStore: ObservableObject {
     static let defaultMenuBarPanelHeight: Double = 440
@@ -96,6 +141,48 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    @Published var primaryAutoDetectionLanguage: String {
+        didSet {
+            let normalizedValue = TranslationLanguageOptions.normalizedAutoDetectionLanguage(
+                primaryAutoDetectionLanguage,
+                fallback: TranslationLanguageOptions.defaultPrimaryAutoDetectionLanguage
+            )
+            if primaryAutoDetectionLanguage != normalizedValue {
+                primaryAutoDetectionLanguage = normalizedValue
+                return
+            }
+
+            if primaryAutoDetectionLanguage == secondaryAutoDetectionLanguage {
+                secondaryAutoDetectionLanguage = TranslationLanguageOptions.fallbackAutoDetectionLanguage(
+                    excluding: primaryAutoDetectionLanguage
+                )
+            }
+
+            defaults.set(primaryAutoDetectionLanguage, forKey: Keys.primaryAutoDetectionLanguage)
+        }
+    }
+
+    @Published var secondaryAutoDetectionLanguage: String {
+        didSet {
+            let normalizedValue = TranslationLanguageOptions.normalizedAutoDetectionLanguage(
+                secondaryAutoDetectionLanguage,
+                fallback: TranslationLanguageOptions.defaultSecondaryAutoDetectionLanguage
+            )
+            if secondaryAutoDetectionLanguage != normalizedValue {
+                secondaryAutoDetectionLanguage = normalizedValue
+                return
+            }
+
+            if secondaryAutoDetectionLanguage == primaryAutoDetectionLanguage {
+                primaryAutoDetectionLanguage = TranslationLanguageOptions.fallbackAutoDetectionLanguage(
+                    excluding: secondaryAutoDetectionLanguage
+                )
+            }
+
+            defaults.set(secondaryAutoDetectionLanguage, forKey: Keys.secondaryAutoDetectionLanguage)
+        }
+    }
+
     @Published var shortcutKeyCode: UInt32 {
         didSet {
             defaults.set(Int(shortcutKeyCode), forKey: Keys.shortcutKeyCode)
@@ -137,6 +224,10 @@ final class SettingsStore: ObservableObject {
         ShortcutFormatter.string(forKeyCode: shortcutKeyCode, modifiers: shortcutModifiers)
     }
 
+    var autoDetectionLanguageIdentifiers: [String] {
+        [primaryAutoDetectionLanguage, secondaryAutoDetectionLanguage]
+    }
+
     private let defaults: UserDefaults
     private let currentBuildNumber: String
 
@@ -158,6 +249,22 @@ final class SettingsStore: ObservableObject {
 
         let preferredTargetRawValue = defaults.string(forKey: Keys.preferredTargetLanguage)
         self.preferredTargetLanguage = PreferredTargetLanguage(rawValue: preferredTargetRawValue ?? "") ?? .automatic
+
+        let storedPrimaryAutoDetectionLanguage = TranslationLanguageOptions.normalizedAutoDetectionLanguage(
+            defaults.string(forKey: Keys.primaryAutoDetectionLanguage),
+            fallback: TranslationLanguageOptions.defaultPrimaryAutoDetectionLanguage
+        )
+        var storedSecondaryAutoDetectionLanguage = TranslationLanguageOptions.normalizedAutoDetectionLanguage(
+            defaults.string(forKey: Keys.secondaryAutoDetectionLanguage),
+            fallback: TranslationLanguageOptions.defaultSecondaryAutoDetectionLanguage
+        )
+        if storedPrimaryAutoDetectionLanguage == storedSecondaryAutoDetectionLanguage {
+            storedSecondaryAutoDetectionLanguage = TranslationLanguageOptions.fallbackAutoDetectionLanguage(
+                excluding: storedPrimaryAutoDetectionLanguage
+            )
+        }
+        self.primaryAutoDetectionLanguage = storedPrimaryAutoDetectionLanguage
+        self.secondaryAutoDetectionLanguage = storedSecondaryAutoDetectionLanguage
 
         let storedKeyCode = defaults.object(forKey: Keys.shortcutKeyCode) as? Int
         let storedModifiers = defaults.object(forKey: Keys.shortcutModifiers) as? Int
@@ -229,6 +336,8 @@ private enum Keys {
     static let sourceLanguage = "settings.sourceLanguage"
     static let targetLanguage = "settings.targetLanguage"
     static let preferredTargetLanguage = "settings.preferredTargetLanguage"
+    static let primaryAutoDetectionLanguage = "settings.primaryAutoDetectionLanguage"
+    static let secondaryAutoDetectionLanguage = "settings.secondaryAutoDetectionLanguage"
     static let shortcutKeyCode = "settings.shortcutKeyCode"
     static let shortcutModifiers = "settings.shortcutModifiers"
     static let hasCompletedWelcomeFlow = "settings.hasCompletedWelcomeFlow"

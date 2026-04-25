@@ -63,6 +63,120 @@ final class TransnapTests: XCTestCase {
         XCTAssertFalse(controller.debugIsPopoverShown)
     }
 
+    func testLanguageDirectionResolverDetectsSourceOnlyWhenBothLanguagesAreAutomatic() {
+        let direction = LanguageDirectionResolver.resolve(
+            for: "This is a simple English sentence for language detection.",
+            sourceLanguage: "auto",
+            targetLanguage: "auto",
+            automaticLanguageIdentifiers: ["zh-Hans", "en"]
+        )
+
+        XCTAssertEqual(direction?.detectedSourceIdentifier, "en")
+        XCTAssertEqual(direction?.source?.minimalIdentifier, "en")
+        XCTAssertEqual(direction?.targetIdentifier, "zh-Hans")
+    }
+
+    func testLanguageDirectionResolverDetectsSourceWhenUserChoosesTargetLanguage() {
+        let direction = LanguageDirectionResolver.resolve(
+            for: "This is a simple English sentence for language detection.",
+            sourceLanguage: "auto",
+            targetLanguage: "zh-Hans",
+            automaticLanguageIdentifiers: ["zh-Hans", "en"]
+        )
+
+        XCTAssertEqual(direction?.detectedSourceIdentifier, "en")
+        XCTAssertEqual(direction?.source?.minimalIdentifier, "en")
+        XCTAssertEqual(direction?.targetIdentifier, "zh-Hans")
+    }
+
+    func testLanguageDirectionResolverTreatsShortASCIITextAsEnglishInAutomaticMode() {
+        let direction = LanguageDirectionResolver.resolve(
+            for: "hello",
+            sourceLanguage: "auto",
+            targetLanguage: "auto",
+            automaticLanguageIdentifiers: ["zh-Hans", "en"]
+        )
+
+        XCTAssertEqual(direction?.detectedSourceIdentifier, "en")
+        XCTAssertEqual(direction?.source?.minimalIdentifier, "en")
+        XCTAssertEqual(direction?.targetIdentifier, "zh-Hans")
+    }
+
+    func testLanguageDirectionResolverTreatsHanTextAsSimplifiedChineseInAutomaticMode() {
+        let direction = LanguageDirectionResolver.resolve(
+            for: "你好",
+            sourceLanguage: "auto",
+            targetLanguage: "auto",
+            automaticLanguageIdentifiers: ["zh-Hans", "en"]
+        )
+
+        XCTAssertEqual(direction?.detectedSourceIdentifier, "zh-Hans")
+        XCTAssertEqual(direction?.source?.minimalIdentifier, "zh")
+        XCTAssertEqual(direction?.targetIdentifier, "en")
+    }
+
+    func testLanguageDirectionResolverDefaultsLatinSmallLanguagesToEnglishInAutomaticMode() {
+        let direction = LanguageDirectionResolver.resolve(
+            for: "bonjour",
+            sourceLanguage: "auto",
+            targetLanguage: "auto",
+            automaticLanguageIdentifiers: ["zh-Hans", "en"]
+        )
+
+        XCTAssertEqual(direction?.detectedSourceIdentifier, "en")
+        XCTAssertEqual(direction?.source?.minimalIdentifier, "en")
+        XCTAssertEqual(direction?.targetIdentifier, "zh-Hans")
+    }
+
+    func testLanguageDirectionResolverKeepsManuallySelectedSmallLanguage() {
+        let direction = LanguageDirectionResolver.resolve(
+            for: "bonjour",
+            sourceLanguage: "fr",
+            targetLanguage: "zh-Hans",
+            automaticLanguageIdentifiers: ["zh-Hans", "en"]
+        )
+
+        XCTAssertEqual(direction?.detectedSourceIdentifier, "fr")
+        XCTAssertEqual(direction?.source?.minimalIdentifier, "fr")
+        XCTAssertEqual(direction?.targetIdentifier, "zh-Hans")
+    }
+
+    func testLanguageDirectionResolverUsesConfiguredJapaneseEnglishPair() {
+        let direction = LanguageDirectionResolver.resolve(
+            for: "こんにちは",
+            sourceLanguage: "auto",
+            targetLanguage: "auto",
+            automaticLanguageIdentifiers: ["ja", "en"]
+        )
+
+        XCTAssertEqual(direction?.detectedSourceIdentifier, "ja")
+        XCTAssertEqual(direction?.source?.minimalIdentifier, "ja")
+        XCTAssertEqual(direction?.targetIdentifier, "en")
+    }
+
+    func testLanguageDirectionResolverTranslatesEnglishToConfiguredPrimaryLanguage() {
+        let direction = LanguageDirectionResolver.resolve(
+            for: "hello",
+            sourceLanguage: "auto",
+            targetLanguage: "auto",
+            automaticLanguageIdentifiers: ["ja", "en"]
+        )
+
+        XCTAssertEqual(direction?.detectedSourceIdentifier, "en")
+        XCTAssertEqual(direction?.source?.minimalIdentifier, "en")
+        XCTAssertEqual(direction?.targetIdentifier, "ja")
+    }
+
+    func testSettingsStoreKeepsAutoDetectionLanguagesDistinct() {
+        let settingsStore = makeSettingsStore()
+
+        settingsStore.primaryAutoDetectionLanguage = "ja"
+        settingsStore.secondaryAutoDetectionLanguage = "ja"
+
+        XCTAssertEqual(settingsStore.secondaryAutoDetectionLanguage, "ja")
+        XCTAssertNotEqual(settingsStore.primaryAutoDetectionLanguage, settingsStore.secondaryAutoDetectionLanguage)
+    }
+
     private func makeInMemoryContainer() throws -> ModelContainer {
         let schema = Schema([TranslationRecord.self])
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)

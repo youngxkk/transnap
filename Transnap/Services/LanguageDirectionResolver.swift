@@ -18,14 +18,15 @@ struct TranslationDirection {
 enum LanguageDirectionResolver {
     private static let chineseCodes = ["zh", "zh-Hans", "zh-Hant"]
     private static let englishCode = "en"
+    private static let defaultAutoDetectionLanguageIdentifiers = ["zh-Hans", "en"]
+    private static let undeterminedLanguageIdentifier = "und"
 
-    static func resolve(for text: String, sourceLanguage: String, targetLanguage: String, preferredTargetLanguage: PreferredTargetLanguage) -> TranslationDirection? {
-        let recognizer = NLLanguageRecognizer()
-        recognizer.processString(text)
-
-        let detected = recognizer.dominantLanguage
-        let detectedIdentifier = detected?.rawValue ?? "und"
-        let systemIdentifier = Locale.preferredLanguages.first ?? Locale.current.language.languageCode?.identifier ?? englishCode
+    static func resolve(for text: String, sourceLanguage: String, targetLanguage: String, automaticLanguageIdentifiers: [String] = defaultAutoDetectionLanguageIdentifiers) -> TranslationDirection? {
+        let automaticLanguages = normalizedAutomaticLanguageIdentifiers(automaticLanguageIdentifiers)
+        let shouldDetectSourceLanguage = sourceLanguage == "auto"
+        let detectedIdentifier = shouldDetectSourceLanguage
+            ? detectLanguageIdentifier(for: text, automaticLanguageIdentifiers: automaticLanguages)
+            : undeterminedLanguageIdentifier
 
         let finalSourceIdentifier: String
         if sourceLanguage == "auto" {
@@ -36,25 +37,16 @@ enum LanguageDirectionResolver {
 
         let finalTargetIdentifier: String
         if targetLanguage == "auto" {
-            // Apply existing automatic logic if target is auto
-            switch preferredTargetLanguage {
-            case .simplifiedChinese:
-                finalTargetIdentifier = "zh-Hans"
-            case .english:
-                finalTargetIdentifier = englishCode
-            case .automatic:
-                if isChinese(systemIdentifier) {
-                    finalTargetIdentifier = isChinese(finalSourceIdentifier) ? englishCode : "zh-Hans"
-                } else {
-                    finalTargetIdentifier = isEnglish(finalSourceIdentifier) ? "zh-Hans" : englishCode
-                }
-            }
+            finalTargetIdentifier = automaticTargetIdentifier(
+                for: finalSourceIdentifier,
+                automaticLanguageIdentifiers: automaticLanguages
+            )
         } else {
             finalTargetIdentifier = targetLanguage
         }
 
         return TranslationDirection(
-            source: finalSourceIdentifier == "und" ? nil : Locale.Language(identifier: finalSourceIdentifier),
+            source: finalSourceIdentifier == undeterminedLanguageIdentifier ? nil : Locale.Language(identifier: finalSourceIdentifier),
             target: Locale.Language(identifier: finalTargetIdentifier),
             detectedSourceIdentifier: finalSourceIdentifier,
             targetIdentifier: finalTargetIdentifier
@@ -62,34 +54,85 @@ enum LanguageDirectionResolver {
     }
 
     static func displayName(for identifier: String) -> String {
-        Locale.current.localizedString(forIdentifier: identifier) ?? identifier
+        if identifier == undeterminedLanguageIdentifier {
+            return "自动检测"
+        }
+        return Locale.current.localizedString(forIdentifier: identifier) ?? identifier
     }
 
-    private static func fallbackDirection(sourceLanguage: String, targetLanguage: String, preferredTargetLanguage: PreferredTargetLanguage) -> TranslationDirection {
-        let systemIdentifier = Locale.preferredLanguages.first ?? englishCode
-        
-        let finalSourceIdentifier = sourceLanguage == "auto" ? "und" : sourceLanguage
-        let finalTargetIdentifier: String
-        
-        if targetLanguage == "auto" {
-            switch preferredTargetLanguage {
-            case .simplifiedChinese:
-                finalTargetIdentifier = "zh-Hans"
-            case .english:
-                finalTargetIdentifier = englishCode
-            case .automatic:
-                finalTargetIdentifier = isChinese(systemIdentifier) ? englishCode : "zh-Hans"
-            }
-        } else {
-            finalTargetIdentifier = targetLanguage
+    private static func detectLanguageIdentifier(for text: String, automaticLanguageIdentifiers: [String]) -> String {
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let fallbackLanguage = automaticLanguageIdentifiers.first else { return englishCode }
+        guard !trimmedText.isEmpty else { return fallbackLanguage }
+
+        if containsHanCharacter(in: trimmedText),
+           let chineseLanguage = automaticLanguageIdentifiers.first(where: { isChinese($0) }) {
+            return chineseLanguage
         }
 
-        return TranslationDirection(
-            source: finalSourceIdentifier == "und" ? nil : Locale.Language(identifier: finalSourceIdentifier),
-            target: Locale.Language(identifier: finalTargetIdentifier),
-            detectedSourceIdentifier: finalSourceIdentifier,
-            targetIdentifier: finalTargetIdentifier
-        )
+        if containsKanaCharacter(in: trimmedText),
+           let japaneseLanguage = automaticLanguageIdentifiers.first(where: { languageMatches($0, "ja") }) {
+            return japaneseLanguage
+        }
+
+        if containsHangulCharacter(in: trimmedText),
+           let koreanLanguage = automaticLanguageIdentifiers.first(where: { languageMatches($0, "ko") }) {
+            return koreanLanguage
+        }
+
+        if isASCIIText(trimmedText),
+           let englishLanguage = automaticLanguageIdentifiers.first(where: { isEnglish($0) }),
+           automaticLanguageIdentifiers.contains(where: { usesNonLatinScript($0) }) {
+            return englishLanguage
+        }
+
+        let recognizer = NLLanguageRecognizer()
+        let hintWeight = 1.0 / Double(max(automaticLanguageIdentifiers.count, 1))
+        recognizer.languageHints = automaticLanguageIdentifiers.reduce(into: [NLLanguage: Double]()) { hints, identifier in
+            hints[naturalLanguage(for: identifier)] = hintWeight
+        }
+        recognizer.processString(trimmedText)
+
+        let hypotheses = recognizer.languageHypotheses(withMaximum: 12)
+        return automaticLanguageIdentifiers.max { lhs, rhs in
+            confidence(for: lhs, in: hypotheses) < confidence(for: rhs, in: hypotheses)
+        } ?? fallbackLanguage
+    }
+
+    private static func automaticTargetIdentifier(for sourceIdentifier: String, automaticLanguageIdentifiers: [String]) -> String {
+        guard let primaryLanguage = automaticLanguageIdentifiers.first else { return englishCode }
+        let secondaryLanguage = automaticLanguageIdentifiers.dropFirst().first ?? englishCode
+
+        if languageMatches(sourceIdentifier, primaryLanguage) {
+            return secondaryLanguage
+        }
+
+        if languageMatches(sourceIdentifier, secondaryLanguage) {
+            return primaryLanguage
+        }
+
+        return primaryLanguage
+    }
+
+    private static func normalizedAutomaticLanguageIdentifiers(_ identifiers: [String]) -> [String] {
+        let candidates = identifiers.filter { $0 != "auto" }
+        let uniqueCandidates = candidates.reduce(into: [String]()) { result, identifier in
+            guard result.contains(where: { languageMatches($0, identifier) }) == false else { return }
+            result.append(identifier)
+        }
+
+        if uniqueCandidates.count >= 2 {
+            return Array(uniqueCandidates.prefix(2))
+        }
+
+        if let firstLanguage = uniqueCandidates.first {
+            let fallbackLanguage = defaultAutoDetectionLanguageIdentifiers.first(where: {
+                languageMatches($0, firstLanguage) == false
+            }) ?? englishCode
+            return [firstLanguage, fallbackLanguage]
+        }
+
+        return defaultAutoDetectionLanguageIdentifiers
     }
 
     private static func isChinese(_ identifier: String) -> Bool {
@@ -98,5 +141,80 @@ enum LanguageDirectionResolver {
 
     private static func isEnglish(_ identifier: String) -> Bool {
         identifier.hasPrefix(englishCode)
+    }
+
+    private static func languageMatches(_ lhs: String, _ rhs: String) -> Bool {
+        if lhs == rhs { return true }
+        if isChinese(lhs), isChinese(rhs) { return true }
+        return lhs.hasPrefix("\(rhs)-") || rhs.hasPrefix("\(lhs)-")
+    }
+
+    private static func naturalLanguage(for identifier: String) -> NLLanguage {
+        if isChinese(identifier) {
+            return identifier.hasPrefix("zh-Hant") ? .traditionalChinese : .simplifiedChinese
+        }
+
+        return NLLanguage(rawValue: Locale.Language(identifier: identifier).languageCode?.identifier ?? identifier)
+    }
+
+    private static func confidence(for identifier: String, in hypotheses: [NLLanguage: Double]) -> Double {
+        if isChinese(identifier) {
+            return (hypotheses[.simplifiedChinese] ?? 0) + (hypotheses[.traditionalChinese] ?? 0)
+        }
+
+        return hypotheses[naturalLanguage(for: identifier)] ?? 0
+    }
+
+    private static func usesNonLatinScript(_ identifier: String) -> Bool {
+        isChinese(identifier)
+            || languageMatches(identifier, "ja")
+            || languageMatches(identifier, "ko")
+    }
+
+    private static func containsHanCharacter(in text: String) -> Bool {
+        text.unicodeScalars.contains { scalar in
+            switch scalar.value {
+            case 0x3400...0x4DBF,
+                 0x4E00...0x9FFF,
+                 0xF900...0xFAFF,
+                 0x20000...0x2A6DF,
+                 0x2A700...0x2B73F,
+                 0x2B740...0x2B81F,
+                 0x2B820...0x2CEAF:
+                return true
+            default:
+                return false
+            }
+        }
+    }
+
+    private static func containsKanaCharacter(in text: String) -> Bool {
+        text.unicodeScalars.contains { scalar in
+            switch scalar.value {
+            case 0x3040...0x309F,
+                 0x30A0...0x30FF,
+                 0x31F0...0x31FF:
+                return true
+            default:
+                return false
+            }
+        }
+    }
+
+    private static func containsHangulCharacter(in text: String) -> Bool {
+        text.unicodeScalars.contains { scalar in
+            switch scalar.value {
+            case 0x1100...0x11FF,
+                 0x3130...0x318F,
+                 0xAC00...0xD7AF:
+                return true
+            default:
+                return false
+            }
+        }
+    }
+
+    private static func isASCIIText(_ text: String) -> Bool {
+        text.unicodeScalars.allSatisfy(\.isASCII)
     }
 }

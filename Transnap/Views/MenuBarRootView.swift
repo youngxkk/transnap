@@ -205,6 +205,7 @@ private struct TranslatorPanelView: View {
     @ObservedObject var viewModel: TransnapViewModel
     @ObservedObject var settingsStore: SettingsStore
     let windowCoordinator: WindowCoordinator
+    @StateObject private var offlineLanguageManager = OfflineLanguageManager()
     @State private var inputEditorHeight: CGFloat = 126
     @State private var dragStartPanelHeight: Double?
     private let resizeHandleHeight: CGFloat = 20
@@ -219,7 +220,7 @@ private struct TranslatorPanelView: View {
             VStack(alignment: .leading, spacing: 14) {
                 header
                 inputSection
-                actionRow
+                actionSection
                 resultSection
             }
             .padding(14)
@@ -230,8 +231,14 @@ private struct TranslatorPanelView: View {
         .scrollBounceBehavior(.basedOnSize)
         .animation(.spring(response: 0.34, dampingFraction: 0.86), value: viewModel.isTranslating)
         .animation(.easeInOut(duration: 0.22), value: viewModel.translatedText)
+        .task {
+            await offlineLanguageManager.refreshStatuses()
+        }
         .translationTask(viewModel.translationConfiguration) { session in
             await viewModel.performTranslation(using: session)
+        }
+        .translationTask(offlineLanguageManager.pendingConfiguration) { session in
+            await offlineLanguageManager.performPendingInstall(using: session)
         }
         .overlay(alignment: .bottom) {
             resizeHandle
@@ -338,21 +345,29 @@ private struct TranslatorPanelView: View {
         }
     }
 
-    private var actionRow: some View {
-        HStack {
-            Button("翻译") {
-                viewModel.requestTranslationFromInput()
+    private var actionSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Button("翻译") {
+                    viewModel.requestTranslationFromInput()
+                }
+                .keyboardShortcut(.return, modifiers: [])
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+                .controlSize(.regular)
+
+                languagePickerRow
+
+                Spacer()
+
+                if !viewModel.translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    copyFloatingButton
+                        .transition(.opacity.combined(with: .scale(scale: 0.92)))
+                }
             }
-            .keyboardShortcut(.return, modifiers: [])
-            .buttonStyle(.borderedProminent)
-            .buttonBorderShape(.capsule)
-            .controlSize(.regular)
 
-            Spacer()
-
-            if !viewModel.translatedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                copyFloatingButton
-                    .transition(.opacity.combined(with: .scale(scale: 0.92)))
+            if let languageDownloadStatusRow {
+                languageDownloadStatusRow
             }
         }
     }
@@ -493,6 +508,154 @@ private struct TranslatorPanelView: View {
         .onHover { isHoveringCopy = $0 }
     }
 
+    private var languagePickerRow: some View {
+        HStack(spacing: 3) {
+            compactLanguageMenu(
+                title: sourceLanguageLabel,
+                selection: settingsStore.sourceLanguage
+            ) { identifier in
+                selectSourceLanguage(identifier)
+            }
+
+            Button {
+                swapLanguages()
+            } label: {
+                Image(systemName: "arrow.left.arrow.right")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 18, height: 18)
+            }
+            .buttonStyle(.plain)
+            .help("交换原文和翻译语言")
+
+            compactLanguageMenu(
+                title: targetLanguageLabel,
+                selection: settingsStore.targetLanguage
+            ) { identifier in
+                selectTargetLanguage(identifier)
+            }
+        }
+        .padding(.horizontal, 5)
+        .padding(.vertical, 2)
+        .background(Color.black.opacity(0.03), in: Capsule())
+        .fixedSize()
+        .help("仅在自动识别不准确时手动指定语言")
+    }
+
+    private var sourceLanguageLabel: String {
+        settingsStore.sourceLanguage == "auto"
+            ? "自动检测"
+            : TranslationLanguageOptions.title(for: settingsStore.sourceLanguage)
+    }
+
+    private var targetLanguageLabel: String {
+        settingsStore.targetLanguage == "auto"
+            ? "自动检测"
+            : TranslationLanguageOptions.title(for: settingsStore.targetLanguage)
+    }
+
+    private func compactLanguageMenu(
+        title: String,
+        selection: String,
+        onSelect: @escaping (String) -> Void
+    ) -> some View {
+        Menu {
+            ForEach(TranslationLanguageOptions.all) { option in
+                selectionAction(
+                    title: option.title,
+                    isSelected: selection == option.identifier
+                ) {
+                    onSelect(option.identifier)
+                }
+            }
+        } label: {
+            Text(title)
+                .lineLimit(1)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(selection == "auto" ? .tertiary : .secondary)
+                .padding(.horizontal, 1)
+                .padding(.vertical, 0.5)
+        }
+        .menuStyle(.borderlessButton)
+    }
+
+    private func swapLanguages() {
+        let source = settingsStore.sourceLanguage
+        let target = settingsStore.targetLanguage
+        settingsStore.sourceLanguage = target
+        settingsStore.targetLanguage = source
+        requestLanguageInstallIfNeeded(for: target)
+        requestLanguageInstallIfNeeded(for: source)
+    }
+
+    private func selectSourceLanguage(_ identifier: String) {
+        settingsStore.sourceLanguage = identifier
+        requestLanguageInstallIfNeeded(for: identifier)
+    }
+
+    private func selectTargetLanguage(_ identifier: String) {
+        settingsStore.targetLanguage = identifier
+        requestLanguageInstallIfNeeded(for: identifier)
+    }
+
+    private func requestLanguageInstallIfNeeded(for identifier: String) {
+        Task {
+            await offlineLanguageManager.requestInstallIfNeeded(for: identifier)
+        }
+    }
+
+    private var languageDownloadStatusRow: AnyView? {
+        if case let .installing(identifier) = offlineLanguageManager.installState {
+            return AnyView(
+                HStack(alignment: .center, spacing: 8) {
+                    LoadingSpinner(size: 14, lineWidth: 1.6, tint: .blue)
+                        .fixedSize()
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("正在下载 \(TranslationLanguageOptions.title(for: identifier)) 语言包")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.primary)
+                        Text("关闭系统下载窗口后，Transnap 会继续等待下载完成。")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Color.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            )
+        }
+
+        if let lastErrorMessage = offlineLanguageManager.lastErrorMessage {
+            return AnyView(
+                HStack(alignment: .center, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.orange)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("语言包下载失败")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(.primary)
+                        Text(lastErrorMessage)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            )
+        }
+
+        return nil
+    }
+
     private func copyButtonLabel(
         text: String,
         systemImage: String,
@@ -506,6 +669,20 @@ private struct TranslatorPanelView: View {
                 .font(.caption.weight(.medium))
         }
         .foregroundStyle(foregroundColor)
+    }
+
+    private func selectionAction(
+        title: String,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            if isSelected {
+                Label(title, systemImage: "checkmark")
+            } else {
+                Text(title)
+            }
+        }
     }
 
     private var spinnerView: some View {
