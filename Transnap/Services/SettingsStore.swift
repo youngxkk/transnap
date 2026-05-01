@@ -28,11 +28,70 @@ enum PreferredTargetLanguage: String, CaseIterable, Identifiable {
     }
 }
 
+enum DisplayLanguage: String, CaseIterable, Identifiable {
+    case simplifiedChinese
+    case english
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .simplifiedChinese: return "简体中文"
+        case .english: return "English"
+        }
+    }
+
+    var localeIdentifier: String {
+        switch self {
+        case .simplifiedChinese: return "zh-Hans"
+        case .english: return "en"
+        }
+    }
+
+    func text(
+        _ simplifiedChinese: String,
+        _ english: String,
+        french: String? = nil,
+        spanish: String? = nil
+    ) -> String {
+        localizedText([
+            .simplifiedChinese: simplifiedChinese,
+            .english: english
+        ])
+    }
+
+    func localizedText(_ translations: [DisplayLanguage: String]) -> String {
+        translations[self]
+            ?? translations[.english]
+            ?? translations[.simplifiedChinese]
+            ?? translations.values.first
+            ?? ""
+    }
+}
+
 struct TranslationLanguageOption: Identifiable, Hashable {
     let identifier: String
-    let title: String
+    private let localizedTitles: [DisplayLanguage: String]
 
     var id: String { identifier }
+
+    init(
+        identifier: String,
+        simplifiedChineseTitle: String,
+        englishTitle: String,
+        frenchTitle: String? = nil,
+        spanishTitle: String? = nil
+    ) {
+        self.identifier = identifier
+        self.localizedTitles = [
+            .simplifiedChinese: simplifiedChineseTitle,
+            .english: englishTitle
+        ]
+    }
+
+    func title(in language: DisplayLanguage) -> String {
+        language.localizedText(localizedTitles)
+    }
 }
 
 enum TranslationLanguageOptions {
@@ -41,21 +100,29 @@ enum TranslationLanguageOptions {
     static let defaultSecondaryAutoDetectionLanguage = "en"
 
     static let all: [TranslationLanguageOption] = [
-        TranslationLanguageOption(identifier: automaticIdentifier, title: "自动检测"),
-        TranslationLanguageOption(identifier: "zh-Hans", title: "简体中文"),
-        TranslationLanguageOption(identifier: "en", title: "英语"),
-        TranslationLanguageOption(identifier: "ja", title: "日语"),
-        TranslationLanguageOption(identifier: "ko", title: "韩语"),
-        TranslationLanguageOption(identifier: "fr", title: "法语"),
-        TranslationLanguageOption(identifier: "de", title: "德语"),
+        TranslationLanguageOption(identifier: automaticIdentifier, simplifiedChineseTitle: "自动检测", englishTitle: "Auto Detect", frenchTitle: "Détection automatique", spanishTitle: "Detección automática"),
+        TranslationLanguageOption(identifier: "zh-Hans", simplifiedChineseTitle: "简体中文", englishTitle: "Simplified Chinese", frenchTitle: "Chinois simplifié", spanishTitle: "Chino simplificado"),
+        TranslationLanguageOption(identifier: "zh-Hant", simplifiedChineseTitle: "繁体中文", englishTitle: "Traditional Chinese", frenchTitle: "Chinois traditionnel", spanishTitle: "Chino tradicional"),
+        TranslationLanguageOption(identifier: "en", simplifiedChineseTitle: "英语", englishTitle: "English", frenchTitle: "Anglais", spanishTitle: "Inglés"),
+        TranslationLanguageOption(identifier: "ja", simplifiedChineseTitle: "日语", englishTitle: "Japanese", frenchTitle: "Japonais", spanishTitle: "Japonés"),
+        TranslationLanguageOption(identifier: "ko", simplifiedChineseTitle: "韩语", englishTitle: "Korean", frenchTitle: "Coréen", spanishTitle: "Coreano"),
+        TranslationLanguageOption(identifier: "es", simplifiedChineseTitle: "西班牙语", englishTitle: "Spanish", frenchTitle: "Espagnol", spanishTitle: "Español"),
+        TranslationLanguageOption(identifier: "fr", simplifiedChineseTitle: "法语", englishTitle: "French", frenchTitle: "Français", spanishTitle: "Francés"),
+        TranslationLanguageOption(identifier: "de", simplifiedChineseTitle: "德语", englishTitle: "German", frenchTitle: "Allemand", spanishTitle: "Alemán"),
+        TranslationLanguageOption(identifier: "it", simplifiedChineseTitle: "意大利语", englishTitle: "Italian", frenchTitle: "Italien", spanishTitle: "Italiano"),
+        TranslationLanguageOption(identifier: "pt", simplifiedChineseTitle: "葡萄牙语", englishTitle: "Portuguese", frenchTitle: "Portugais", spanishTitle: "Portugués"),
+        TranslationLanguageOption(identifier: "ru", simplifiedChineseTitle: "俄语", englishTitle: "Russian", frenchTitle: "Russe", spanishTitle: "Ruso"),
+        TranslationLanguageOption(identifier: "ar", simplifiedChineseTitle: "阿拉伯语", englishTitle: "Arabic", frenchTitle: "Arabe", spanishTitle: "Árabe"),
     ]
 
     static let autoDetectionCandidates: [TranslationLanguageOption] = all.filter {
         $0.identifier != automaticIdentifier
     }
 
-    static func title(for identifier: String) -> String {
-        all.first(where: { $0.identifier == identifier })?.title ?? identifier
+    static func title(for identifier: String, in language: DisplayLanguage = .simplifiedChinese) -> String {
+        all.first(where: { $0.identifier == identifier })?.title(in: language)
+            ?? Locale(identifier: language.localeIdentifier).localizedString(forIdentifier: identifier)
+            ?? identifier
     }
 
     static func normalizedAutoDetectionLanguage(_ identifier: String?, fallback: String) -> String {
@@ -75,7 +142,7 @@ enum TranslationLanguageOptions {
 
 @MainActor
 final class SettingsStore: ObservableObject {
-    static let defaultMenuBarPanelHeight: Double = 440
+    static let defaultMenuBarPanelHeight: Double = 420
     static let minMenuBarPanelHeight: Double = 400
     static let maxMenuBarPanelHeight: Double = 640
 
@@ -85,14 +152,29 @@ final class SettingsStore: ObservableObject {
         case requiresApproval
         case unavailable(String)
 
-        var message: String {
+        func message(in language: DisplayLanguage) -> String {
             switch self {
             case .enabled:
-                return "已开启，登录 Mac 后会自动打开。"
+                return language.text(
+                    "已开启，登录 Mac 后会自动打开。",
+                    "Enabled. Transnap will open automatically after you log in.",
+                    french: "Activé. Transnap s'ouvrira automatiquement après votre connexion.",
+                    spanish: "Activado. Transnap se abrirá automáticamente después de iniciar sesión."
+                )
             case .disabled:
-                return "已关闭，你可以随时手动打开。"
+                return language.text(
+                    "已关闭，你可以随时手动打开。",
+                    "Disabled. You can open it manually at any time.",
+                    french: "Désactivé. Vous pouvez l'ouvrir manuellement à tout moment.",
+                    spanish: "Desactivado. Puedes abrirlo manualmente en cualquier momento."
+                )
             case .requiresApproval:
-                return "还需要你去系统“登录项”里确认一次。"
+                return language.text(
+                    "还需要你去系统“登录项”里确认一次。",
+                    "Please confirm this once in macOS Login Items.",
+                    french: "Veuillez confirmer une fois dans les éléments de connexion de macOS.",
+                    spanish: "Confírmalo una vez en los ítems de inicio de macOS."
+                )
             case let .unavailable(message):
                 return message
             }
@@ -102,13 +184,17 @@ final class SettingsStore: ObservableObject {
     enum Appearance: String, CaseIterable, Identifiable {
         case system, light, dark
         var id: String { rawValue }
-        var title: String {
+        func title(in language: DisplayLanguage) -> String {
             switch self {
-            case .system: return "跟随系统"
-            case .light: return "浅色模式"
-            case .dark: return "深色模式"
+            case .system: return language.text("跟随系统", "System", french: "Système", spanish: "Sistema")
+            case .light: return language.text("浅色模式", "Light", french: "Clair", spanish: "Claro")
+            case .dark: return language.text("深色模式", "Dark", french: "Sombre", spanish: "Oscuro")
             }
         }
+    }
+
+    @Published var displayLanguage: DisplayLanguage {
+        didSet { defaults.set(displayLanguage.rawValue, forKey: Keys.displayLanguage) }
     }
 
     @Published var downloadedLanguages: Set<String> {
@@ -195,6 +281,12 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    @Published var doubleCopyShortcutEnabled: Bool {
+        didSet {
+            defaults.set(doubleCopyShortcutEnabled, forKey: Keys.doubleCopyShortcutEnabled)
+        }
+    }
+
     @Published var hasCompletedWelcomeFlow: Bool {
         didSet {
             defaults.set(hasCompletedWelcomeFlow, forKey: Keys.hasCompletedWelcomeFlow)
@@ -228,18 +320,35 @@ final class SettingsStore: ObservableObject {
         [primaryAutoDetectionLanguage, secondaryAutoDetectionLanguage]
     }
 
+    func text(
+        _ simplifiedChinese: String,
+        _ english: String,
+        french: String? = nil,
+        spanish: String? = nil
+    ) -> String {
+        displayLanguage.text(simplifiedChinese, english, french: french, spanish: spanish)
+    }
+
     private let defaults: UserDefaults
     private let currentBuildNumber: String
 
-    init(defaults: UserDefaults = .standard, appBuild: String? = nil) {
+    init(
+        defaults: UserDefaults = .standard,
+        appBuild: String? = nil,
+        showsWelcomeEveryLaunchInDebug: Bool? = nil
+    ) {
         self.defaults = defaults
         self.currentBuildNumber = appBuild ?? Self.resolveCurrentBuildNumber()
-        let defaultShortcutKeyCode = Int(kVK_ANSI_T)
+        let resolvedShowsWelcomeEveryLaunchInDebug = showsWelcomeEveryLaunchInDebug ?? Self.defaultShowsWelcomeEveryLaunchInDebug
+        let defaultShortcutKeyCode = Int(kVK_ANSI_C)
+        let previousDefaultShortcutKeyCode = Int(kVK_ANSI_T)
         let oldDefaultShortcutModifiers = Int(UInt32(shiftKey) | UInt32(optionKey))
-        let defaultShortcutModifiers = Int(UInt32(shiftKey) | UInt32(controlKey))
+        let previousDefaultShortcutModifiers = Int(UInt32(shiftKey) | UInt32(controlKey))
+        let defaultShortcutModifiers = Int(UInt32(shiftKey) | UInt32(cmdKey))
 
         self.downloadedLanguages = Set(defaults.stringArray(forKey: Keys.downloadedLanguages) ?? ["zh-Hans", "en"])
 
+        self.displayLanguage = DisplayLanguage(rawValue: defaults.string(forKey: Keys.displayLanguage) ?? "") ?? .simplifiedChinese
         self.appearance = Appearance(rawValue: defaults.string(forKey: Keys.appearance) ?? "") ?? .system
         self.launchAtLogin = defaults.bool(forKey: Keys.launchAtLogin)
         self.historyLimit = defaults.integer(forKey: Keys.historyLimit) == 0 ? 50 : defaults.integer(forKey: Keys.historyLimit)
@@ -269,8 +378,8 @@ final class SettingsStore: ObservableObject {
         let storedKeyCode = defaults.object(forKey: Keys.shortcutKeyCode) as? Int
         let storedModifiers = defaults.object(forKey: Keys.shortcutModifiers) as? Int
         let shouldMigrateOldDefaultShortcut =
-            storedKeyCode == defaultShortcutKeyCode &&
-            storedModifiers == oldDefaultShortcutModifiers
+            (storedKeyCode == previousDefaultShortcutKeyCode && storedModifiers == oldDefaultShortcutModifiers)
+            || (storedKeyCode == previousDefaultShortcutKeyCode && storedModifiers == previousDefaultShortcutModifiers)
         let resolvedShortcutKeyCode = shouldMigrateOldDefaultShortcut
             ? defaultShortcutKeyCode
             : (storedKeyCode ?? defaultShortcutKeyCode)
@@ -279,6 +388,7 @@ final class SettingsStore: ObservableObject {
             : (storedModifiers ?? defaultShortcutModifiers)
         self.shortcutKeyCode = UInt32(resolvedShortcutKeyCode)
         self.shortcutModifiers = UInt32(resolvedShortcutModifiers)
+        self.doubleCopyShortcutEnabled = defaults.bool(forKey: Keys.doubleCopyShortcutEnabled)
 
         if shouldMigrateOldDefaultShortcut {
             defaults.set(resolvedShortcutKeyCode, forKey: Keys.shortcutKeyCode)
@@ -298,9 +408,9 @@ final class SettingsStore: ObservableObject {
                 hasCompletedWelcomeFlow == false || lastCompletedWelcomeBuild != currentBuildNumber
         }
 
-        self.hasCompletedWelcomeFlow = !shouldShowWelcomeForCurrentBuild
+        self.hasCompletedWelcomeFlow = resolvedShowsWelcomeEveryLaunchInDebug ? false : !shouldShowWelcomeForCurrentBuild
 
-        if shouldShowWelcomeForCurrentBuild {
+        if shouldShowWelcomeForCurrentBuild || resolvedShowsWelcomeEveryLaunchInDebug {
             defaults.set(false, forKey: Keys.hasCompletedWelcomeFlow)
         }
 
@@ -326,10 +436,15 @@ final class SettingsStore: ObservableObject {
     private static func resolveCurrentBuildNumber(bundle: Bundle = .main) -> String {
         bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
     }
+
+    private static var defaultShowsWelcomeEveryLaunchInDebug: Bool {
+        false
+    }
 }
 
 private enum Keys {
     static let downloadedLanguages = "settings.downloadedLanguages"
+    static let displayLanguage = "settings.displayLanguage"
     static let appearance = "settings.appearance"
     static let launchAtLogin = "settings.launchAtLogin"
     static let historyLimit = "settings.historyLimit"
@@ -340,6 +455,7 @@ private enum Keys {
     static let secondaryAutoDetectionLanguage = "settings.secondaryAutoDetectionLanguage"
     static let shortcutKeyCode = "settings.shortcutKeyCode"
     static let shortcutModifiers = "settings.shortcutModifiers"
+    static let doubleCopyShortcutEnabled = "settings.doubleCopyShortcutEnabled"
     static let hasCompletedWelcomeFlow = "settings.hasCompletedWelcomeFlow"
     static let lastCompletedWelcomeBuild = "settings.lastCompletedWelcomeBuild"
     static let menuBarPanelHeight = "settings.menuBarPanelHeight"

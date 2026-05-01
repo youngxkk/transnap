@@ -19,7 +19,7 @@ enum ShortcutFormatter {
         if modifiers & UInt32(shiftKey) != 0 { parts.append("⇧") }
 
         parts.append(keyString(for: keyCode))
-        return parts.joined()
+        return parts.joined(separator: " ")
     }
 
     static func carbonModifiers(from eventModifiers: NSEvent.ModifierFlags) -> UInt32 {

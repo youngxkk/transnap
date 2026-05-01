@@ -109,7 +109,7 @@ struct AdaptiveTextEditor: NSViewRepresentable {
             let maxHeight = CGFloat(maxLines) * lineHeight + verticalInsets
             let desiredHeight = min(max(contentHeight + verticalInsets, minHeight), maxHeight)
 
-            scrollView.hasVerticalScroller = contentHeight + verticalInsets > maxHeight
+            scrollView.hasVerticalScroller = false
 
             if abs(dynamicHeight - desiredHeight) > 0.5 {
                 DispatchQueue.main.async {

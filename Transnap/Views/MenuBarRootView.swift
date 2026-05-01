@@ -14,6 +14,7 @@ struct MenuBarRootView: View {
     @ObservedObject var viewModel: TransnapViewModel
     @ObservedObject var settingsStore: SettingsStore
     let windowCoordinator: WindowCoordinator
+    @StateObject private var onboardingLanguageManager = OfflineLanguageManager()
 
     var body: some View {
         Group {
@@ -26,12 +27,16 @@ struct MenuBarRootView: View {
             } else {
                 WelcomePanelView(
                     viewModel: viewModel,
-                    settingsStore: settingsStore
+                    settingsStore: settingsStore,
+                    offlineLanguageManager: onboardingLanguageManager
                 )
             }
         }
         .frame(width: 360, height: settingsStore.menuBarPanelHeight)
         .preferredColorScheme(preferredColorScheme)
+        .translationTask(onboardingLanguageManager.pendingConfiguration) { session in
+            await onboardingLanguageManager.performPendingInstall(using: session)
+        }
     }
 
     private var preferredColorScheme: ColorScheme? {
@@ -78,30 +83,32 @@ struct TranslatorWindowView: View {
 private struct WelcomePanelView: View {
     @ObservedObject var viewModel: TransnapViewModel
     @ObservedObject var settingsStore: SettingsStore
+    @ObservedObject var offlineLanguageManager: OfflineLanguageManager
+    @State private var selectedSourceLanguage: String
+    @State private var selectedTargetLanguage: String
+    @State private var isHoveringStartButton = false
+
+    init(
+        viewModel: TransnapViewModel,
+        settingsStore: SettingsStore,
+        offlineLanguageManager: OfflineLanguageManager
+    ) {
+        self.viewModel = viewModel
+        self.settingsStore = settingsStore
+        self.offlineLanguageManager = offlineLanguageManager
+        _selectedSourceLanguage = State(initialValue: Self.defaultSourceLanguage())
+        _selectedTargetLanguage = State(initialValue: "en")
+    }
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: true) {
-            VStack(alignment: .leading, spacing: 24) {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 18) {
                 header
-                featureList
+                languageSetup
 
-                Button("开始使用") {
-                    settingsStore.hasCompletedWelcomeFlow = true
-                    viewModel.handleMenuOpened()
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 220, height: 52)
-                .background(
-                    Capsule(style: .continuous)
-                        .fill(Color(red: 0.05, green: 0.48, blue: 0.98))
-                )
-                .shadow(color: .blue.opacity(0.22), radius: 10, y: 5)
-                .padding(.top, 6)
-                .frame(maxWidth: .infinity, alignment: .center)
+                startButton
             }
-            .padding(.top, 30)
+            .padding(.top, 24)
             .padding(.horizontal, 20)
             .padding(.bottom, 20)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -111,91 +118,179 @@ private struct WelcomePanelView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .center, spacing: 14) {
+        VStack(spacing: 12) {
+            ZStack(alignment: .bottomTrailing) {
                 Image(nsImage: NSApplication.shared.applicationIconImage)
                     .resizable()
                     .interpolation(.high)
                     .scaledToFit()
-                    .frame(width: 58, height: 58)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .shadow(color: .black.opacity(0.12), radius: 10, y: 4)
+                    .frame(width: 64, height: 64)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .shadow(color: .black.opacity(0.14), radius: 14, y: 6)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("欢迎使用 Transnap")
-                        .font(.system(size: 24, weight: .semibold))
+                Text("🎉")
+                    .font(.system(size: 20))
+                    .frame(width: 30, height: 30)
+                    .background(.regularMaterial, in: Circle())
+                    .overlay {
+                        Circle()
+                            .strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5)
+                    }
+                    .offset(x: 8, y: 6)
+            }
 
-                    Text("打开就能翻译。")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+            VStack(spacing: 5) {
+                Text(settingsStore.text("欢迎使用 Transnap", "Welcome to Transnap"))
+                    .font(.system(size: 25, weight: .semibold))
+
+                Text(settingsStore.text("使用键盘快捷键⌘ + C + C（按住⌘并两次点击C），复制后自动在弹窗中显示翻译，此功能需到设置中手动打开", "Use the keyboard shortcut ⌘ + C + C (hold ⌘ and press C twice) to copy and automatically show the translation in the panel. This feature must be enabled manually in Settings."))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 4)
+        .padding(.bottom, 2)
+    }
+
+    private var languageSetup: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 6) {
+                    Image(systemName: "globe")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.blue)
+
+                    Text(settingsStore.text("选择常用语言", "Choose Your Languages"))
+                        .font(.system(size: 14, weight: .semibold))
+                }
+
+                HStack(spacing: 10) {
+                    languagePicker(
+                        title: settingsStore.text("我的语言", "My Language"),
+                        selection: $selectedSourceLanguage
+                    )
+
+                    languagePicker(
+                        title: settingsStore.text("主要翻译成", "Translate Mainly To"),
+                        selection: $selectedTargetLanguage
+                    )
                 }
             }
-        }
-    }
-
-    private var featureList: some View {
-        VStack(spacing: 0) {
-            welcomeRow(
-                symbol: "doc.on.clipboard",
-                tint: .blue,
-                title: "自动读取剪贴板",
-                message: "打开面板后会直接带入剪贴板文本。"
-            )
-
-            Divider()
-                .padding(.leading, 48)
-
-            welcomeRow(
-                symbol: "lock.shield",
-                tint: .green,
-                title: "仅在本机处理",
-                message: "翻译和历史记录都保存在这台 Mac 上。"
-            )
-
-            Divider()
-                .padding(.leading, 48)
-
-            welcomeRow(
-                symbol: "keyboard",
-                tint: .orange,
-                title: "快捷键快速打开",
-                message: "按 \(settingsStore.shortcutDisplayString) 即可打开翻译面板。"
-            )
-        }
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
-        }
-    }
-
-    private func welcomeRow(
-        symbol: String,
-        tint: Color,
-        title: String,
-        message: String
-    ) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: symbol)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(tint)
-                .frame(width: 24, height: 24)
-                .padding(.top, 2)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-
-                Text(message)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            .padding(14)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.06), lineWidth: 0.5)
             }
 
-            Spacer(minLength: 0)
+            Text(settingsStore.text(
+                "下载语言包后翻译速度更快，轻量化，毫秒级。",
+                "Download language packs for faster, lightweight, millisecond-level translation."
+            ))
+            .font(.system(size: 12))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 16)
+    }
+
+    private func languagePicker(title: String, selection: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+
+            Picker(title, selection: selection) {
+                ForEach(TranslationLanguageOptions.autoDetectionCandidates) { option in
+                    Text(option.title(in: settingsStore.displayLanguage))
+                        .tag(option.identifier)
+                }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var startButton: some View {
+        Button(settingsStore.text("下载语言包并进入", "Download Languages and Continue")) {
+            startOnboardingDownload()
+        }
+        .buttonStyle(.plain)
+        .font(.system(size: 15, weight: .semibold))
+        .foregroundStyle(.white)
+        .frame(width: 240, height: 50)
+        .background(
+            Capsule(style: .continuous)
+                .fill(startButtonFill)
+        )
+        .overlay {
+            Capsule(style: .continuous)
+                .strokeBorder(Color.white.opacity(isHoveringStartButton ? 0.36 : 0.16), lineWidth: 1)
+        }
+        .scaleEffect(isHoveringStartButton ? 1.035 : 1)
+        .shadow(color: .blue.opacity(isHoveringStartButton ? 0.3 : 0.22), radius: isHoveringStartButton ? 13 : 10, y: isHoveringStartButton ? 6 : 5)
+        .padding(.top, 2)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .contentShape(Capsule(style: .continuous))
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.14)) {
+                isHoveringStartButton = hovering
+            }
+        }
+    }
+
+    private var startButtonFill: Color {
+        if isHoveringStartButton {
+            return Color(red: 0.03, green: 0.54, blue: 1.0)
+        }
+
+        return Color(red: 0.05, green: 0.48, blue: 0.98)
+    }
+
+    private func startOnboardingDownload() {
+        let sourceLanguage = selectedSourceLanguage
+        var targetLanguage = selectedTargetLanguage
+
+        if sourceLanguage == targetLanguage {
+            targetLanguage = TranslationLanguageOptions.fallbackAutoDetectionLanguage(
+                excluding: sourceLanguage
+            )
+            selectedTargetLanguage = targetLanguage
+        }
+
+        settingsStore.primaryAutoDetectionLanguage = sourceLanguage
+        settingsStore.secondaryAutoDetectionLanguage = targetLanguage
+        settingsStore.sourceLanguage = TranslationLanguageOptions.automaticIdentifier
+        settingsStore.targetLanguage = TranslationLanguageOptions.automaticIdentifier
+        settingsStore.hasCompletedWelcomeFlow = true
+        viewModel.handleMenuOpened()
+
+        offlineLanguageManager.requestInstall(
+            source: sourceLanguage,
+            target: targetLanguage
+        )
+    }
+
+    private static func defaultSourceLanguage() -> String {
+        let preferredIdentifier = Locale.preferredLanguages.first ?? Locale.current.identifier
+        let language = Locale.Language(identifier: preferredIdentifier)
+        let minimalIdentifier = language.minimalIdentifier
+        let maximalIdentifier = language.maximalIdentifier
+
+        if minimalIdentifier.hasPrefix("zh") || maximalIdentifier.contains("Hans") {
+            return maximalIdentifier.contains("Hant") ? "zh-Hant" : "zh-Hans"
+        }
+
+        if let exactMatch = TranslationLanguageOptions.autoDetectionCandidates.first(where: {
+            $0.identifier == minimalIdentifier || $0.identifier == preferredIdentifier
+        }) {
+            return exactMatch.identifier
+        }
+
+        return TranslationLanguageOptions.defaultPrimaryAutoDetectionLanguage
     }
 }
 
@@ -212,11 +307,13 @@ private struct TranslatorPanelView: View {
     private let inputMinLines = 5
     private let inputMaxLines = 8
     private let resultMinimumHeight: CGFloat = 126
+    @State private var isHoveringTranslate: Bool = false
+    @State private var isHoveringSwapLanguages: Bool = false
     @State private var isHoveringCopy: Bool = false
     @State private var showCopiedFeedback = false
 
     var body: some View {
-        ScrollView(.vertical, showsIndicators: true) {
+        ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 14) {
                 header
                 inputSection
@@ -267,13 +364,21 @@ private struct TranslatorPanelView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Label("Transnap", systemImage: "translate")
-                    .font(.title3.weight(.semibold))
+                HStack(spacing: 7) {
+                    Image("StatusBarIcon")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 18, height: 18)
+
+                    Text("Transnap")
+                }
+                .font(.title3.weight(.semibold))
 
                 if viewModel.isTranslating {
                     HStack(spacing: 6) {
                         spinnerView
-                        Text("翻译中")
+                        Text(settingsStore.text("翻译中", "Translating"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -282,15 +387,15 @@ private struct TranslatorPanelView: View {
 
                 Spacer()
 
-                headerIcon(systemName: "clock") {
+                headerIcon(systemName: "clock", hoverTint: .accentColor) {
                     windowCoordinator.showHistoryWindow()
                 }
 
-                headerIcon(systemName: "gearshape") {
+                headerIcon(systemName: "gear", hoverTint: .accentColor) {
                     windowCoordinator.showSettingsWindow()
                 }
 
-                headerIcon(systemName: "xmark.circle") {
+                headerIcon(systemName: "xmark.circle", hoverTint: .red) {
                     NSApp.terminate(nil)
                 }
             }
@@ -308,15 +413,8 @@ private struct TranslatorPanelView: View {
         }
     }
 
-    private func headerIcon(systemName: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(.secondary)
-                .frame(width: 28, height: 28)
-                .background(Color.black.opacity(0.05), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-        .buttonStyle(.plain)
+    private func headerIcon(systemName: String, hoverTint: Color, action: @escaping () -> Void) -> some View {
+        HeaderIconButton(systemName: systemName, hoverTint: hoverTint, action: action)
     }
 
     private var inputSection: some View {
@@ -336,7 +434,7 @@ private struct TranslatorPanelView: View {
             .opacity(viewModel.isTranslating ? 0.68 : 1)
 
             if viewModel.inputText.isEmpty {
-                Text("输入或粘贴要翻译的文本")
+                Text(settingsStore.text("输入或粘贴要翻译的文本", "Type or paste text to translate"))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 14)
@@ -348,13 +446,31 @@ private struct TranslatorPanelView: View {
     private var actionSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Button("翻译") {
+                Button(settingsStore.text("翻译", "Trans")) {
                     viewModel.requestTranslationFromInput()
                 }
                 .keyboardShortcut(.return, modifiers: [])
-                .buttonStyle(.borderedProminent)
-                .buttonBorderShape(.capsule)
-                .controlSize(.regular)
+                .buttonStyle(.plain)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 7)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(Color.accentColor.opacity(isHoveringTranslate ? 1 : 0.88))
+                )
+                .overlay {
+                    Capsule(style: .continuous)
+                        .strokeBorder(Color.white.opacity(isHoveringTranslate ? 0.35 : 0.16), lineWidth: 1)
+                }
+                .scaleEffect(isHoveringTranslate ? 1.04 : 1)
+                .shadow(color: Color.accentColor.opacity(isHoveringTranslate ? 0.26 : 0.12), radius: isHoveringTranslate ? 9 : 4, y: isHoveringTranslate ? 3 : 1)
+                .contentShape(Capsule(style: .continuous))
+                .onHover { hovering in
+                    withAnimation(.easeOut(duration: 0.12)) {
+                        isHoveringTranslate = hovering
+                    }
+                }
 
                 languagePickerRow
 
@@ -406,13 +522,13 @@ private struct TranslatorPanelView: View {
     }
 
     private var resultSection: some View {
-        ScrollView {
+        ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
                 if viewModel.isTranslating {
                     translatingResultState
                         .transition(.opacity.combined(with: .scale(scale: 0.98)))
                 } else if viewModel.translatedText.isEmpty {
-                    Text("翻译结果会显示在这里")
+                    Text(settingsStore.text("翻译结果会显示在这里", "Translation results will appear here"))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .transition(.opacity)
@@ -455,7 +571,7 @@ private struct TranslatorPanelView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 spinnerView
-                Text("正在生成译文")
+                Text(settingsStore.text("正在生成译文", "Generating translation"))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -484,14 +600,14 @@ private struct TranslatorPanelView: View {
         } label: {
             ZStack {
                 copyButtonLabel(
-                    text: "复制译文",
+                    text: settingsStore.text("复制译文", "Copy"),
                     systemImage: "doc.on.doc",
-                    foregroundColor: .secondary
+                    foregroundColor: isHoveringCopy ? .accentColor : .secondary
                 )
                 .opacity(showCopiedFeedback ? 0 : 1)
 
                 copyButtonLabel(
-                    text: "已复制",
+                    text: settingsStore.text("已复制", "Copied"),
                     systemImage: "checkmark",
                     foregroundColor: .green
                 )
@@ -500,12 +616,23 @@ private struct TranslatorPanelView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(
-                (showCopiedFeedback ? Color.green.opacity(0.12) : Color.black.opacity(isHoveringCopy ? 0.08 : 0.04)),
+                (showCopiedFeedback ? Color.green.opacity(0.12) : Color.accentColor.opacity(isHoveringCopy ? 0.14 : 0.04)),
                 in: Capsule()
             )
+            .overlay {
+                Capsule(style: .continuous)
+                    .strokeBorder(isHoveringCopy ? Color.accentColor.opacity(0.42) : Color.primary.opacity(0.06), lineWidth: 1)
+            }
+            .scaleEffect(isHoveringCopy ? 1.04 : 1)
+            .shadow(color: isHoveringCopy ? Color.accentColor.opacity(0.16) : .clear, radius: 7, y: 2)
         }
         .buttonStyle(.plain)
-        .onHover { isHoveringCopy = $0 }
+        .contentShape(Capsule(style: .continuous))
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) {
+                isHoveringCopy = hovering
+            }
+        }
     }
 
     private var languagePickerRow: some View {
@@ -521,12 +648,27 @@ private struct TranslatorPanelView: View {
                 swapLanguages()
             } label: {
                 Image(systemName: "arrow.left.arrow.right")
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 18, height: 18)
+                    .font(.system(size: 9, weight: isHoveringSwapLanguages ? .semibold : .medium))
+                    .foregroundStyle(isHoveringSwapLanguages ? Color.accentColor : .secondary)
+                    .frame(width: 20, height: 20)
+                    .background(
+                        Circle()
+                            .fill(isHoveringSwapLanguages ? Color.accentColor.opacity(0.13) : Color.clear)
+                    )
+                    .overlay {
+                        Circle()
+                            .strokeBorder(isHoveringSwapLanguages ? Color.accentColor.opacity(0.36) : Color.clear, lineWidth: 1)
+                    }
+                    .scaleEffect(isHoveringSwapLanguages ? 1.08 : 1)
             }
             .buttonStyle(.plain)
-            .help("交换原文和翻译语言")
+            .contentShape(Circle())
+            .onHover { hovering in
+                withAnimation(.easeOut(duration: 0.12)) {
+                    isHoveringSwapLanguages = hovering
+                }
+            }
+            .help(settingsStore.text("交换原文和翻译语言", "Swap source and target languages"))
 
             compactLanguageMenu(
                 title: targetLanguageLabel,
@@ -537,21 +679,25 @@ private struct TranslatorPanelView: View {
         }
         .padding(.horizontal, 5)
         .padding(.vertical, 2)
-        .background(Color.black.opacity(0.03), in: Capsule())
+        .background(Color.black.opacity(0.035), in: Capsule())
+        .overlay {
+            Capsule(style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.05), lineWidth: 1)
+        }
         .fixedSize()
-        .help("仅在自动识别不准确时手动指定语言")
+        .help(settingsStore.text("仅在自动识别不准确时手动指定语言", "Specify languages manually when auto detection is inaccurate"))
     }
 
     private var sourceLanguageLabel: String {
         settingsStore.sourceLanguage == "auto"
-            ? "自动检测"
-            : TranslationLanguageOptions.title(for: settingsStore.sourceLanguage)
+            ? settingsStore.text("自动检测", "Auto")
+            : TranslationLanguageOptions.title(for: settingsStore.sourceLanguage, in: settingsStore.displayLanguage)
     }
 
     private var targetLanguageLabel: String {
         settingsStore.targetLanguage == "auto"
-            ? "自动检测"
-            : TranslationLanguageOptions.title(for: settingsStore.targetLanguage)
+            ? settingsStore.text("自动检测", "Auto")
+            : TranslationLanguageOptions.title(for: settingsStore.targetLanguage, in: settingsStore.displayLanguage)
     }
 
     private func compactLanguageMenu(
@@ -559,24 +705,12 @@ private struct TranslatorPanelView: View {
         selection: String,
         onSelect: @escaping (String) -> Void
     ) -> some View {
-        Menu {
-            ForEach(TranslationLanguageOptions.all) { option in
-                selectionAction(
-                    title: option.title,
-                    isSelected: selection == option.identifier
-                ) {
-                    onSelect(option.identifier)
-                }
-            }
-        } label: {
-            Text(title)
-                .lineLimit(1)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(selection == "auto" ? .tertiary : .secondary)
-                .padding(.horizontal, 1)
-                .padding(.vertical, 0.5)
-        }
-        .menuStyle(.borderlessButton)
+        CompactLanguageMenuButton(
+            title: title,
+            selection: selection,
+            displayLanguage: settingsStore.displayLanguage,
+            onSelect: onSelect
+        )
     }
 
     private func swapLanguages() {
@@ -612,10 +746,10 @@ private struct TranslatorPanelView: View {
                         .fixedSize()
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("正在下载 \(TranslationLanguageOptions.title(for: identifier)) 语言包")
+                        Text(settingsStore.text("正在下载 \(TranslationLanguageOptions.title(for: identifier, in: settingsStore.displayLanguage)) 语言包", "Downloading \(TranslationLanguageOptions.title(for: identifier, in: settingsStore.displayLanguage)) language pack"))
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(.primary)
-                        Text("关闭系统下载窗口后，Transnap 会继续等待下载完成。")
+                        Text(settingsStore.text("关闭系统下载窗口后，Transnap 会继续等待下载完成。", "After closing the system download window, Transnap will keep waiting for the download to finish."))
                             .font(.system(size: 11))
                             .foregroundStyle(.secondary)
                     }
@@ -636,7 +770,7 @@ private struct TranslatorPanelView: View {
                         .foregroundStyle(.orange)
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("语言包下载失败")
+                        Text(settingsStore.text("语言包下载失败", "Language Pack Download Failed"))
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(.primary)
                         Text(lastErrorMessage)
@@ -691,6 +825,63 @@ private struct TranslatorPanelView: View {
     }
 }
 
+private struct CompactLanguageMenuButton: View {
+    let title: String
+    let selection: String
+    let displayLanguage: DisplayLanguage
+    let onSelect: (String) -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Menu {
+            ForEach(TranslationLanguageOptions.all) { option in
+                Button {
+                    onSelect(option.identifier)
+                } label: {
+                    if selection == option.identifier {
+                        Label(option.title(in: displayLanguage), systemImage: "checkmark")
+                    } else {
+                        Text(option.title(in: displayLanguage))
+                    }
+                }
+            }
+        } label: {
+            Text(title)
+                .lineLimit(1)
+                .font(.system(size: 10, weight: isHovering ? .semibold : .medium))
+                .foregroundStyle(labelColor)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule(style: .continuous)
+                        .fill(isHovering ? Color.accentColor.opacity(0.13) : Color.clear)
+                )
+                .overlay {
+                    Capsule(style: .continuous)
+                        .strokeBorder(isHovering ? Color.accentColor.opacity(0.36) : Color.clear, lineWidth: 1)
+                }
+                .scaleEffect(isHovering ? 1.04 : 1)
+        }
+        .menuStyle(.borderlessButton)
+        .buttonStyle(.plain)
+        .contentShape(Capsule(style: .continuous))
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) {
+                isHovering = hovering
+            }
+        }
+    }
+
+    private var labelColor: Color {
+        if isHovering {
+            return .accentColor
+        }
+
+        return selection == "auto" ? .secondary : .primary.opacity(0.72)
+    }
+}
+
 @available(macOS 15.0, *)
 private struct PanelBackgroundView: View {
     var body: some View {
@@ -733,4 +924,42 @@ private struct ResizeCursorModifier: ViewModifier {
 
 private enum ResizeCursor {
     static let shared: NSCursor = .resizeUpDown
+}
+
+private struct HeaderIconButton: View {
+    let systemName: String
+    let hoverTint: Color
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 14, weight: isHovering ? .semibold : .medium))
+                .foregroundStyle(isHovering ? hoverTint : .secondary)
+                .frame(width: 28, height: 28)
+                .background(backgroundShape)
+                .overlay(borderShape)
+                .scaleEffect(isHovering ? 1.08 : 1)
+                .shadow(color: isHovering ? hoverTint.opacity(0.18) : .clear, radius: 7, y: 2)
+        }
+        .buttonStyle(.plain)
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.12)) {
+                isHovering = hovering
+            }
+        }
+    }
+
+    private var backgroundShape: some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(isHovering ? hoverTint.opacity(0.14) : Color.black.opacity(0.05))
+    }
+
+    private var borderShape: some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .strokeBorder(isHovering ? hoverTint.opacity(0.42) : Color.clear, lineWidth: 1)
+    }
 }

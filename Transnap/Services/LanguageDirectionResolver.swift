@@ -53,10 +53,20 @@ enum LanguageDirectionResolver {
         )
     }
 
-    static func displayName(for identifier: String) -> String {
+    static func displayName(for identifier: String, in displayLanguage: DisplayLanguage? = nil) -> String {
         if identifier == undeterminedLanguageIdentifier {
-            return "自动检测"
+            return displayLanguage?.text(
+                "自动检测",
+                "Auto Detect",
+                french: "Détection automatique",
+                spanish: "Detección automática"
+            ) ?? "自动检测"
         }
+
+        if let displayLanguage {
+            return TranslationLanguageOptions.title(for: identifier, in: displayLanguage)
+        }
+
         return Locale.current.localizedString(forIdentifier: identifier) ?? identifier
     }
 

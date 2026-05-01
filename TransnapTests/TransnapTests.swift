@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Carbon
 import SwiftData
 import XCTest
 @testable import Transnap
@@ -34,6 +35,19 @@ final class TransnapTests: XCTestCase {
         let secondLaunchStore = SettingsStore(defaults: defaults, appBuild: "13")
 
         XCTAssertFalse(secondLaunchStore.hasCompletedWelcomeFlow)
+    }
+
+    func testDefaultShortcutUsesCommandShiftC() {
+        let settingsStore = makeSettingsStore()
+
+        XCTAssertEqual(settingsStore.shortcutKeyCode, UInt32(kVK_ANSI_C))
+        XCTAssertEqual(settingsStore.shortcutModifiers, UInt32(cmdKey) | UInt32(shiftKey))
+    }
+
+    func testDoubleCopyShortcutIsOptInByDefault() {
+        let settingsStore = makeSettingsStore()
+
+        XCTAssertFalse(settingsStore.doubleCopyShortcutEnabled)
     }
 
     func testMenuBarControllerCreatesStatusItemForMenuBarMode() throws {
@@ -175,6 +189,21 @@ final class TransnapTests: XCTestCase {
 
         XCTAssertEqual(settingsStore.secondaryAutoDetectionLanguage, "ja")
         XCTAssertNotEqual(settingsStore.primaryAutoDetectionLanguage, settingsStore.secondaryAutoDetectionLanguage)
+    }
+
+    func testDisplayLanguageOnlyOffersChineseAndEnglish() {
+        XCTAssertEqual(DisplayLanguage.allCases, [.simplifiedChinese, .english])
+    }
+
+    func testTranslationLanguageTitlesUseSelectedDisplayLanguage() {
+        XCTAssertEqual(
+            TranslationLanguageOptions.title(for: "fr", in: .english),
+            "French"
+        )
+        XCTAssertEqual(
+            LanguageDirectionResolver.displayName(for: "es", in: .simplifiedChinese),
+            "西班牙语"
+        )
     }
 
     private func makeInMemoryContainer() throws -> ModelContainer {

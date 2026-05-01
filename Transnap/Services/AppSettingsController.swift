@@ -71,7 +71,7 @@ final class AppSettingsController {
             }
             syncLaunchAtLoginFromSystem()
         } catch {
-            settingsStore.updateLaunchAtLoginState(.unavailable(Self.userFacingLaunchAtLoginError(from: error)))
+            settingsStore.updateLaunchAtLoginState(.unavailable(userFacingLaunchAtLoginError(from: error)))
             syncStoredLaunchAtLoginValue(from: SMAppService.mainApp.status)
         }
     }
@@ -86,11 +86,11 @@ final class AppSettingsController {
         case .notRegistered:
             settingsStore.updateLaunchAtLoginState(.disabled)
         case .notFound:
-            settingsStore.updateLaunchAtLoginState(.unavailable("当前环境暂不支持“登录时自动打开”。"))
+            settingsStore.updateLaunchAtLoginState(.unavailable(settingsStore.text("当前环境暂不支持“登录时自动打开”。", "Open at Login is not supported in the current environment.")))
         case .requiresApproval:
             settingsStore.updateLaunchAtLoginState(.requiresApproval)
         @unknown default:
-            settingsStore.updateLaunchAtLoginState(.unavailable("暂时无法读取“登录时自动打开”的状态。"))
+            settingsStore.updateLaunchAtLoginState(.unavailable(settingsStore.text("暂时无法读取“登录时自动打开”的状态。", "Unable to read the Open at Login status right now.")))
         }
     }
 
@@ -112,7 +112,7 @@ final class AppSettingsController {
         isSynchronizingLaunchAtLogin = false
     }
 
-    private static func userFacingLaunchAtLoginError(from error: Error) -> String {
-        "设置“登录时自动打开”失败：\(error.localizedDescription)"
+    private func userFacingLaunchAtLoginError(from error: Error) -> String {
+        settingsStore.text("设置“登录时自动打开”失败：\(error.localizedDescription)", "Failed to update Open at Login: \(error.localizedDescription)")
     }
 }

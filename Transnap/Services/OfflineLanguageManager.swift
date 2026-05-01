@@ -31,15 +31,7 @@ final class OfflineLanguageManager: ObservableObject {
     @Published var pendingConfiguration: TranslationSession.Configuration?
 
     private let availability: LanguageAvailability
-    private let knownLanguageIdentifiers = [
-        "zh-Hans",
-        "en",
-        "ja",
-        "ko",
-        "fr",
-        "de",
-        "es"
-    ]
+    private let knownLanguageIdentifiers = TranslationLanguageOptions.autoDetectionCandidates.map(\.identifier)
 
     init(availability: LanguageAvailability = LanguageAvailability()) {
         self.availability = availability
@@ -54,13 +46,7 @@ final class OfflineLanguageManager: ObservableObject {
     func refreshStatuses() async {
         lastErrorMessage = nil
 
-        let supportedIdentifiers = Set(
-            await availability.supportedLanguages.map(normalizedIdentifier(for:))
-        )
         packs = knownLanguageIdentifiers
-            .filter {
-                supportedIdentifiers.contains(normalizedIdentifier(for: $0)) || statuses[$0] == .installed
-            }
             .map { identifier in
                 LanguagePack(
                     identifier: identifier,
@@ -85,6 +71,18 @@ final class OfflineLanguageManager: ObservableObject {
         pendingConfiguration = TranslationSession.Configuration(
             source: Locale.Language(identifier: identifier),
             target: installCompanionLanguage(for: identifier)
+        )
+    }
+
+    func requestInstall(source sourceIdentifier: String, target targetIdentifier: String) {
+        guard installState == .idle else { return }
+        guard sourceIdentifier != "auto", targetIdentifier != "auto", sourceIdentifier != targetIdentifier else { return }
+
+        lastErrorMessage = nil
+        installState = .installing(targetIdentifier)
+        pendingConfiguration = TranslationSession.Configuration(
+            source: Locale.Language(identifier: sourceIdentifier),
+            target: Locale.Language(identifier: targetIdentifier)
         )
     }
 
@@ -130,11 +128,4 @@ final class OfflineLanguageManager: ObservableObject {
         return Locale.Language(identifier: fallback)
     }
 
-    private func normalizedIdentifier(for language: Locale.Language) -> String {
-        language.maximalIdentifier
-    }
-
-    private func normalizedIdentifier(for identifier: String) -> String {
-        Locale.Language(identifier: identifier).maximalIdentifier
-    }
 }

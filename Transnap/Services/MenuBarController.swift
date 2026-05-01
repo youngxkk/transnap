@@ -21,6 +21,7 @@ final class MenuBarController: NSObject {
     private let statusItem: NSStatusItem
     private let popover = NSPopover()
     private var cancellables: Set<AnyCancellable> = []
+    private var welcomePresentationAttempts = 0
 
     init(
         viewModel: TransnapViewModel,
@@ -51,8 +52,19 @@ final class MenuBarController: NSObject {
         }
     }
 
+    func showPopoverForShortcut() {
+        if popover.isShown {
+            if settingsStore.hasCompletedWelcomeFlow {
+                viewModel.handleMenuOpened()
+            }
+            NSApp.activate(ignoringOtherApps: true)
+        } else {
+            showPopover()
+        }
+    }
+
     func showPopover() {
-        guard let button = statusItem.button else { return }
+        guard let button = statusPopoverAnchorButton() else { return }
 
         updatePopoverContentSize()
         if settingsStore.hasCompletedWelcomeFlow {
@@ -115,10 +127,29 @@ final class MenuBarController: NSObject {
         guard showsWelcomeOnLaunch else { return }
         guard settingsStore.hasCompletedWelcomeFlow == false else { return }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
-            guard let self, self.popover.isShown == false else { return }
-            self.showPopover()
+        welcomePresentationAttempts = 0
+        scheduleWelcomePresentationAttempt(after: 0.8)
+    }
+
+    private func scheduleWelcomePresentationAttempt(after delay: TimeInterval) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.presentWelcomeWhenStatusItemIsReady()
         }
+    }
+
+    private func presentWelcomeWhenStatusItemIsReady() {
+        guard popover.isShown == false else { return }
+        guard settingsStore.hasCompletedWelcomeFlow == false else { return }
+
+        welcomePresentationAttempts += 1
+
+        guard statusPopoverAnchorButton() != nil else {
+            guard welcomePresentationAttempts < 24 else { return }
+            scheduleWelcomePresentationAttempt(after: 0.2)
+            return
+        }
+
+        showPopover()
     }
 
     private func updateStatusItemTitle() {
@@ -128,6 +159,18 @@ final class MenuBarController: NSObject {
 
     private func updatePopoverContentSize() {
         popover.contentSize = NSSize(width: 360, height: settingsStore.menuBarPanelHeight)
+    }
+
+    private func statusPopoverAnchorButton() -> NSStatusBarButton? {
+        guard let button = statusItem.button else { return nil }
+        guard let window = button.window else { return nil }
+        guard window.screen != nil else { return nil }
+
+        button.layoutSubtreeIfNeeded()
+        guard button.bounds.width > 0, button.bounds.height > 0 else { return nil }
+        guard window.frame.width > 0, window.frame.height > 0 else { return nil }
+
+        return button
     }
 
     @objc

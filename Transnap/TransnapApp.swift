@@ -72,16 +72,24 @@ struct TransnapApp: App {
             hotkeyManager.onTrigger = {
                 menuBarController.togglePopover()
             }
+            hotkeyManager.onDoubleCopyTrigger = {
+                menuBarController.showPopoverForShortcut()
+            }
             self.hotkeyManager = hotkeyManager
         }
     }
 
     @SceneBuilder
     var body: some Scene {
-        Settings {
-            SettingsView(settingsStore: settingsStore)
-                .modelContainer(sharedModelContainer)
-        }
+        Settings { EmptyView() }
+            .commands {
+                CommandGroup(replacing: .appSettings) {
+                    Button(settingsStore.text("设置...", "Settings...")) {
+                        windowCoordinator.showSettingsWindow()
+                    }
+                    .keyboardShortcut(",", modifiers: [.command])
+                }
+            }
     }
 
     private static var isRunningTests: Bool {

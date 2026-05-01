@@ -9,17 +9,18 @@ import SwiftData
 import SwiftUI
 
 struct HistoryWindowView: View {
+    @ObservedObject var settingsStore: SettingsStore
     @Query(sort: \TranslationRecord.createdAt, order: .reverse) private var history: [TranslationRecord]
     @Environment(\.modelContext) private var modelContext
 
     var body: some View {
         Group {
             if history.isEmpty {
-                ContentUnavailableView("还没有翻译记录", systemImage: "clock")
+                ContentUnavailableView(settingsStore.text("还没有翻译记录", "No Translation History Yet"), systemImage: "clock")
             } else {
                 List {
                     ForEach(history) { record in
-                        HistoryRowView(record: record) {
+                        HistoryRowView(record: record, settingsStore: settingsStore) {
                             delete(record)
                         }
                         .listRowInsets(EdgeInsets(top: 6, leading: 2, bottom: 6, trailing: 2))
@@ -42,6 +43,7 @@ struct HistoryWindowView: View {
 
 private struct HistoryRowView: View {
     let record: TranslationRecord
+    @ObservedObject var settingsStore: SettingsStore
     let onDelete: () -> Void
     @State private var isHovering = false
     @State private var highlightedField: HistoryCopiedField?
@@ -92,17 +94,17 @@ private struct HistoryRowView: View {
         )
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .contextMenu {
-            Button("复制原文", systemImage: "doc.on.doc") {
+            Button(settingsStore.text("复制原文", "Copy Source"), systemImage: "doc.on.doc") {
                 copy(.source)
             }
 
-            Button("复制译文", systemImage: "doc.on.doc") {
+            Button(settingsStore.text("复制译文", "Copy Translation"), systemImage: "doc.on.doc") {
                 copy(.translation)
             }
 
             Divider()
 
-            Button("删除", systemImage: "trash", role: .destructive) {
+            Button(settingsStore.text("删除", "Delete"), systemImage: "trash", role: .destructive) {
                 onDelete()
             }
         }
@@ -113,14 +115,14 @@ private struct HistoryRowView: View {
     }
 
     private var languageDirectionText: String {
-        "\(LanguageDirectionResolver.displayName(for: record.sourceLanguageIdentifier)) → \(LanguageDirectionResolver.displayName(for: record.targetLanguageIdentifier))"
+        "\(LanguageDirectionResolver.displayName(for: record.sourceLanguageIdentifier, in: settingsStore.displayLanguage)) → \(LanguageDirectionResolver.displayName(for: record.targetLanguageIdentifier, in: settingsStore.displayLanguage))"
     }
 
     @ViewBuilder
     private var hoverActions: some View {
         HStack(spacing: 4) {
             hoverActionButton(
-                title: "复制译文",
+                title: settingsStore.text("复制译文", "Copy Translation"),
                 systemImage: "character.textbox",
                 showsPopoverHint: true
             ) {
@@ -128,7 +130,7 @@ private struct HistoryRowView: View {
             }
 
             hoverActionButton(
-                title: "复制原文",
+                title: settingsStore.text("复制原文", "Copy Source"),
                 systemImage: "text.quote",
                 showsPopoverHint: true
             ) {
@@ -136,7 +138,7 @@ private struct HistoryRowView: View {
             }
 
             hoverActionButton(
-                title: "删除",
+                title: settingsStore.text("删除", "Delete"),
                 systemImage: "trash",
                 role: .destructive,
                 action: onDelete
