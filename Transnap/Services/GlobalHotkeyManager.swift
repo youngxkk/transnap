@@ -12,12 +12,17 @@ import Foundation
 @MainActor
 final class GlobalHotkeyManager {
     var onTrigger: (() -> Void)?
+    var onDoubleCopyTrigger: (() -> Void)?
 
     private var hotKeyRef: EventHotKeyRef?
     private var eventHandlerRef: EventHandlerRef?
+    private var copyEventTap: CFMachPort?
+    private var copyEventTapRunLoopSource: CFRunLoopSource?
     private var cancellables: Set<AnyCancellable> = []
     private let settingsStore: SettingsStore
     private let hotKeyTarget: EventTargetRef?
+    private var lastCommandCopyTime: TimeInterval?
+    private let doubleCopyInterval: TimeInterval = 0.65
 
     init(settingsStore: SettingsStore) {
         self.settingsStore = settingsStore
@@ -25,6 +30,7 @@ final class GlobalHotkeyManager {
         installEventHandler()
         bindSettings()
         registerCurrentShortcut()
+        updateCopyEventTap()
     }
 
     private func bindSettings() {
@@ -32,6 +38,12 @@ final class GlobalHotkeyManager {
             .combineLatest(settingsStore.$shortcutModifiers)
             .sink { [weak self] _, _ in
                 self?.registerCurrentShortcut()
+            }
+            .store(in: &cancellables)
+
+        settingsStore.$doubleCopyShortcutEnabled
+            .sink { [weak self] _ in
+                self?.updateCopyEventTap()
             }
             .store(in: &cancellables)
     }
@@ -74,6 +86,100 @@ final class GlobalHotkeyManager {
         )
     }
 
+    private func installCopyEventTap() {
+        guard copyEventTap == nil else { return }
+        guard CGPreflightListenEventAccess() else { return }
+
+        let eventMask = CGEventMask(1 << CGEventType.keyDown.rawValue)
+        let callback: CGEventTapCallBack = { _, type, event, userInfo in
+            guard type == .keyDown, let userInfo else {
+                return Unmanaged.passUnretained(event)
+            }
+
+            let manager = Unmanaged<GlobalHotkeyManager>.fromOpaque(userInfo).takeUnretainedValue()
+            manager.handleCopyKeyDown(event)
+            return Unmanaged.passUnretained(event)
+        }
+
+        guard let eventTap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .listenOnly,
+            eventsOfInterest: eventMask,
+            callback: callback,
+            userInfo: UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+        ) else {
+            return
+        }
+
+        copyEventTap = eventTap
+        copyEventTapRunLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
+
+        if let copyEventTapRunLoopSource {
+            CFRunLoopAddSource(CFRunLoopGetMain(), copyEventTapRunLoopSource, .commonModes)
+            CGEvent.tapEnable(tap: eventTap, enable: true)
+        }
+    }
+
+    private func uninstallCopyEventTap() {
+        if let copyEventTapRunLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), copyEventTapRunLoopSource, .commonModes)
+            self.copyEventTapRunLoopSource = nil
+        }
+
+        if let copyEventTap {
+            CGEvent.tapEnable(tap: copyEventTap, enable: false)
+            self.copyEventTap = nil
+        }
+
+        lastCommandCopyTime = nil
+    }
+
+    private func updateCopyEventTap() {
+        guard settingsStore.doubleCopyShortcutEnabled else {
+            uninstallCopyEventTap()
+            return
+        }
+
+        installCopyEventTap()
+    }
+
+    private func handleCopyKeyDown(_ event: CGEvent) {
+        guard UInt32(event.getIntegerValueField(.keyboardEventKeycode)) == UInt32(kVK_ANSI_C) else {
+            lastCommandCopyTime = nil
+            return
+        }
+
+        guard event.getIntegerValueField(.keyboardEventAutorepeat) == 0 else { return }
+        guard isCommandCopy(event.flags) else {
+            lastCommandCopyTime = nil
+            return
+        }
+
+        let now = ProcessInfo.processInfo.systemUptime
+        guard let lastCommandCopyTime else {
+            self.lastCommandCopyTime = now
+            return
+        }
+
+        guard now - lastCommandCopyTime <= doubleCopyInterval else {
+            self.lastCommandCopyTime = now
+            return
+        }
+
+        self.lastCommandCopyTime = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+            self?.onDoubleCopyTrigger?()
+        }
+    }
+
+    private func isCommandCopy(_ flags: CGEventFlags) -> Bool {
+        flags.contains(.maskCommand)
+            && !flags.contains(.maskAlternate)
+            && !flags.contains(.maskControl)
+            && !flags.contains(.maskShift)
+    }
+
     private func registerCurrentShortcut() {
         unregisterHotkey()
 
@@ -98,4 +204,5 @@ final class GlobalHotkeyManager {
             self.hotKeyRef = nil
         }
     }
+
 }

@@ -58,10 +58,10 @@ final class WindowCoordinator {
 
     func showHistoryWindow() {
         if historyWindowController == nil {
-            let content = HistoryWindowView()
+            let content = HistoryWindowView(settingsStore: settingsStore)
                 .modelContainer(modelContainer)
             historyWindowController = makeWindowController(
-                title: "翻译历史",
+                title: settingsStore.text("翻译历史", "Translation History"),
                 size: NSSize(width: 440, height: 520),
                 content: content
             )
@@ -74,9 +74,9 @@ final class WindowCoordinator {
         if settingsWindowController == nil {
             let content = SettingsView(settingsStore: settingsStore)
                 .modelContainer(modelContainer)
-            settingsWindowController = makeWindowController(
-                title: "设置",
-                size: NSSize(width: 420, height: 320),
+            settingsWindowController = makeSettingsWindowController(
+                title: settingsStore.text("设置", "Settings"),
+                size: NSSize(width: 480, height: 520),
                 content: content
             )
         }
@@ -142,6 +142,7 @@ final class WindowCoordinator {
     private func makeWindowController<Content: View>(
         title: String,
         size: NSSize,
+        hidesTitle: Bool = false,
         content: Content
     ) -> NSWindowController {
         let hostingController = NSHostingController(rootView: content)
@@ -153,6 +154,32 @@ final class WindowCoordinator {
         window.center()
         window.titlebarAppearsTransparent = true
         window.toolbarStyle = .unifiedCompact
+        window.titleVisibility = hidesTitle ? .hidden : .visible
+        window.titlebarSeparatorStyle = .none
+        return NSWindowController(window: window)
+    }
+
+    private func makeSettingsWindowController<Content: View>(
+        title: String,
+        size: NSSize,
+        content: Content
+    ) -> NSWindowController {
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = title
+        window.titleVisibility = .visible
+        window.titlebarAppearsTransparent = true
+        window.toolbarStyle = .unified
+        window.isMovableByWindowBackground = true
+        window.contentViewController = NSHostingController(rootView: content)
+        window.minSize = size
+        window.maxSize = size
+        window.isReleasedWhenClosed = false
+        window.center()
         return NSWindowController(window: window)
     }
 }

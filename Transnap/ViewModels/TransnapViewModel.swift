@@ -18,7 +18,7 @@ final class TransnapViewModel: ObservableObject {
     @Published var inputText = ""
     @Published var translatedText = ""
     @Published var sourceText = ""
-    @Published var statusMessage = "点击状态栏图标即可翻译剪贴板"
+    @Published var statusMessage: String
     @Published var isTranslating = false
     @Published var lastErrorMessage: String?
     @Published private(set) var copyFeedbackToken = 0
@@ -29,6 +29,7 @@ final class TransnapViewModel: ObservableObject {
     init(modelContext: ModelContext, settingsStore: SettingsStore) {
         self.modelContext = modelContext
         self.settingsStore = settingsStore
+        self.statusMessage = settingsStore.text("点击状态栏图标即可翻译剪贴板", "Click the menu bar icon to translate the clipboard")
     }
 
     func handleMenuOpened() {
@@ -38,22 +39,22 @@ final class TransnapViewModel: ObservableObject {
 
     func syncInputFromClipboard() {
         guard let clipboardText = ClipboardService.currentText() else {
-            statusMessage = "把内容复制后，点翻译即可"
+            statusMessage = settingsStore.text("把内容复制后，点翻译即可", "Copy something, then click Translate")
             lastErrorMessage = nil
             return
         }
 
         inputText = clipboardText
         sourceText = clipboardText
-        statusMessage = "已填入剪贴板内容"
+        statusMessage = settingsStore.text("已填入剪贴板内容", "Clipboard text added")
         lastErrorMessage = nil
     }
 
     func requestTranslationFromInput() {
         let trimmed = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            statusMessage = "请输入要翻译的文本"
-            lastErrorMessage = "输入框为空。"
+            statusMessage = settingsStore.text("请输入要翻译的文本", "Enter text to translate")
+            lastErrorMessage = settingsStore.text("输入框为空。", "The input field is empty.")
             return
         }
 
@@ -67,23 +68,12 @@ final class TransnapViewModel: ObservableObject {
         queueTranslation(for: trimmed, trigger: .menuBarClick)
     }
 
-    func requestQuickClipboardTranslation() {
-        guard let clipboardText = ClipboardService.currentText() else {
-            statusMessage = "剪贴板里没有可翻译的文本"
-            lastErrorMessage = "当前剪贴板不是文本，已忽略。"
-            return
-        }
-
-        inputText = clipboardText
-        queueTranslation(for: clipboardText, trigger: .doubleCopy)
-    }
-
     func copyTranslatedText() {
         let trimmed = translatedText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
         ClipboardService.copy(text: trimmed)
-        statusMessage = "译文已复制"
+        statusMessage = settingsStore.text("译文已复制", "Translation copied")
         lastErrorMessage = nil
         copyFeedbackToken += 1
     }
@@ -108,14 +98,14 @@ final class TransnapViewModel: ObservableObject {
 
             sourceText = response.sourceText
             translatedText = response.targetText
-            statusMessage = "\(LanguageDirectionResolver.displayName(for: record.sourceLanguageIdentifier)) → \(LanguageDirectionResolver.displayName(for: record.targetLanguageIdentifier))"
+            statusMessage = "\(LanguageDirectionResolver.displayName(for: record.sourceLanguageIdentifier, in: settingsStore.displayLanguage)) → \(LanguageDirectionResolver.displayName(for: record.targetLanguageIdentifier, in: settingsStore.displayLanguage))"
             lastErrorMessage = nil
         } catch is CancellationError {
             lastErrorMessage = nil
         } catch {
             translatedText = ""
             sourceText = request.text
-            statusMessage = "翻译失败: \(error.localizedDescription)"
+            statusMessage = settingsStore.text("翻译失败: \(error.localizedDescription)", "Translation failed: \(error.localizedDescription)")
             lastErrorMessage = error.localizedDescription
         }
 
@@ -136,10 +126,10 @@ final class TransnapViewModel: ObservableObject {
             for: text,
             sourceLanguage: settingsStore.sourceLanguage,
             targetLanguage: settingsStore.targetLanguage,
-            preferredTargetLanguage: settingsStore.preferredTargetLanguage
+            automaticLanguageIdentifiers: settingsStore.autoDetectionLanguageIdentifiers
         ) else {
-            statusMessage = "无法识别语言"
-            lastErrorMessage = "系统未能识别文本语言。"
+            statusMessage = settingsStore.text("无法识别语言", "Could not detect language")
+            lastErrorMessage = settingsStore.text("系统未能识别文本语言。", "The system could not detect the text language.")
             return
         }
 
@@ -152,7 +142,6 @@ final class TransnapViewModel: ObservableObject {
 
         sourceText = text
         translatedText = ""
-        statusMessage = "翻译中..."
         isTranslating = true
         lastErrorMessage = nil
 

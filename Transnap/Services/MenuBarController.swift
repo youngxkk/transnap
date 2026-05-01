@@ -17,20 +17,24 @@ final class MenuBarController: NSObject {
     private let settingsStore: SettingsStore
     private let windowCoordinator: WindowCoordinator
     private let modelContainer: ModelContainer
+    private let showsWelcomeOnLaunch: Bool
     private let statusItem: NSStatusItem
     private let popover = NSPopover()
     private var cancellables: Set<AnyCancellable> = []
+    private var welcomePresentationAttempts = 0
 
     init(
         viewModel: TransnapViewModel,
         settingsStore: SettingsStore,
         windowCoordinator: WindowCoordinator,
-        modelContainer: ModelContainer
+        modelContainer: ModelContainer,
+        showsWelcomeOnLaunch: Bool = true
     ) {
         self.viewModel = viewModel
         self.settingsStore = settingsStore
         self.windowCoordinator = windowCoordinator
         self.modelContainer = modelContainer
+        self.showsWelcomeOnLaunch = showsWelcomeOnLaunch
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
 
@@ -48,8 +52,19 @@ final class MenuBarController: NSObject {
         }
     }
 
+    func showPopoverForShortcut() {
+        if popover.isShown {
+            if settingsStore.hasCompletedWelcomeFlow {
+                viewModel.handleMenuOpened()
+            }
+            NSApp.activate(ignoringOtherApps: true)
+        } else {
+            showPopover()
+        }
+    }
+
     func showPopover() {
-        guard let button = statusItem.button else { return }
+        guard let button = statusPopoverAnchorButton() else { return }
 
         updatePopoverContentSize()
         if settingsStore.hasCompletedWelcomeFlow {
@@ -62,15 +77,27 @@ final class MenuBarController: NSObject {
     private func configureStatusItem() {
         guard let button = statusItem.button else { return }
 
-        button.image = NSImage(
-            systemSymbolName: "character.bubble",
-            accessibilityDescription: "Transnap"
-        )
-        button.imagePosition = .imageLeading
+        button.image = statusBarImage()
+        button.imagePosition = .imageOnly
+        button.imageScaling = .scaleProportionallyDown
         button.target = self
         button.action = #selector(togglePopoverFromStatusItem)
         button.sendAction(on: [.leftMouseUp])
         updateStatusItemTitle()
+    }
+
+    private func statusBarImage() -> NSImage? {
+        if let image = NSImage(named: "StatusBarIcon") {
+            image.isTemplate = true
+            return image
+        }
+
+        let fallbackImage = NSImage(
+            systemSymbolName: "translate",
+            accessibilityDescription: "Transnap"
+        )
+        fallbackImage?.isTemplate = true
+        return fallbackImage
     }
 
     private func configurePopover() {
@@ -97,12 +124,32 @@ final class MenuBarController: NSObject {
     }
 
     private func presentWelcomeIfNeededOnLaunch() {
+        guard showsWelcomeOnLaunch else { return }
         guard settingsStore.hasCompletedWelcomeFlow == false else { return }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
-            guard let self, self.popover.isShown == false else { return }
-            self.showPopover()
+        welcomePresentationAttempts = 0
+        scheduleWelcomePresentationAttempt(after: 0.8)
+    }
+
+    private func scheduleWelcomePresentationAttempt(after delay: TimeInterval) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.presentWelcomeWhenStatusItemIsReady()
         }
+    }
+
+    private func presentWelcomeWhenStatusItemIsReady() {
+        guard popover.isShown == false else { return }
+        guard settingsStore.hasCompletedWelcomeFlow == false else { return }
+
+        welcomePresentationAttempts += 1
+
+        guard statusPopoverAnchorButton() != nil else {
+            guard welcomePresentationAttempts < 24 else { return }
+            scheduleWelcomePresentationAttempt(after: 0.2)
+            return
+        }
+
+        showPopover()
     }
 
     private func updateStatusItemTitle() {
@@ -114,8 +161,32 @@ final class MenuBarController: NSObject {
         popover.contentSize = NSSize(width: 360, height: settingsStore.menuBarPanelHeight)
     }
 
+    private func statusPopoverAnchorButton() -> NSStatusBarButton? {
+        guard let button = statusItem.button else { return nil }
+        guard let window = button.window else { return nil }
+        guard window.screen != nil else { return nil }
+
+        button.layoutSubtreeIfNeeded()
+        guard button.bounds.width > 0, button.bounds.height > 0 else { return nil }
+        guard window.frame.width > 0, window.frame.height > 0 else { return nil }
+
+        return button
+    }
+
     @objc
     private func togglePopoverFromStatusItem() {
         togglePopover()
     }
 }
+
+#if DEBUG
+extension MenuBarController {
+    var debugHasStatusItemButton: Bool {
+        statusItem.button != nil
+    }
+
+    var debugIsPopoverShown: Bool {
+        popover.isShown
+    }
+}
+#endif
