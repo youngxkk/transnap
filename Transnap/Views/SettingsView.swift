@@ -132,22 +132,28 @@ struct GeneralSettingsView: View {
                 }
 
                 HStack(alignment: .center, spacing: 16) {
-                    Text(settingsStore.text("启用快捷键⌘ + C + C", "Enable Shortcut ⌘ + C + C"))
+                    Text(settingsStore.text("复制即翻译", "Copy to Translate"))
                         .frame(maxWidth: .infinity, alignment: .leading)
 
                     HStack(spacing: 12) {
-                        inputMonitoringPermissionLabel
-
-                        if !hasInputMonitoringPermission {
+                        HStack(spacing: 2) {
                             Button {
                                 openInputMonitoringSettings()
                             } label: {
-                                Image(systemName: "arrow.up.right.square")
+                                HStack(spacing: 2) {
+                                    Image(systemName: "arrow.up.right.square")
+                                    Text(settingsStore.text("辅助权限", "Auxiliary Permission"))
+                                }
                             }
                             .buttonStyle(.borderless)
                             .controlSize(.small)
                             .help(settingsStore.text("打开权限设置", "Open Permission Settings"))
+
+                            inputMonitoringPermissionLabel
                         }
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
 
                         SettingsSwitch(
                             isOn: Binding(
@@ -160,7 +166,7 @@ struct GeneralSettingsView: View {
                                     }
                                 }
                             ),
-                            accessibilityLabel: settingsStore.text("启用快捷键⌘ + C + C", "Enable Shortcut ⌘ + C + C")
+                            accessibilityLabel: settingsStore.text("复制即翻译", "Copy to Translate")
                         )
                     }
                 }
@@ -250,15 +256,10 @@ struct GeneralSettingsView: View {
     }
 
     private var inputMonitoringPermissionLabel: some View {
-        Label {
-            Text(hasInputMonitoringPermission
-                ? settingsStore.text("已开启", "Enabled")
-                : settingsStore.text("未开启", "Disabled"))
-        } icon: {
-            Image(systemName: hasInputMonitoringPermission ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-        }
+        Text(hasInputMonitoringPermission
+            ? settingsStore.text("已开启", "Enabled")
+            : settingsStore.text("未开启", "Disabled"))
         .foregroundStyle(hasInputMonitoringPermission ? .green : .orange)
-        .font(.system(size: 12, weight: .medium))
     }
 
     private func refreshInputMonitoringPermission() {
@@ -272,11 +273,18 @@ struct GeneralSettingsView: View {
         let granted = CGRequestListenEventAccess()
         hasInputMonitoringPermission = granted || CGPreflightListenEventAccess()
         settingsStore.doubleCopyShortcutEnabled = hasInputMonitoringPermission
+
+        if !hasInputMonitoringPermission {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                openInputMonitoringSettings()
+            }
+        }
     }
 
     private func openInputMonitoringSettings() {
         let urlStrings = [
             "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent",
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
             "x-apple.systempreferences:com.apple.preference.security?Privacy"
         ]
 
@@ -720,13 +728,10 @@ final class ShortcutRecorderField: NSView {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.cornerRadius = 6
-        layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
-        layer?.borderColor = NSColor.textColor.withAlphaComponent(0.06).cgColor
         layer?.borderWidth = 1
 
         label.alignment = .center
         label.font = .monospacedSystemFont(ofSize: 13, weight: .semibold)
-        label.textColor = .labelColor
         label.translatesAutoresizingMaskIntoConstraints = false
         addSubview(label)
 
@@ -737,6 +742,7 @@ final class ShortcutRecorderField: NSView {
         ])
 
         displayString = ""
+        applyCurrentAppearance()
     }
 
     required init?(coder: NSCoder) {
@@ -744,6 +750,16 @@ final class ShortcutRecorderField: NSView {
     }
 
     override var acceptsFirstResponder: Bool { true }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        applyCurrentAppearance()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyCurrentAppearance()
+    }
 
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
@@ -764,5 +780,13 @@ final class ShortcutRecorderField: NSView {
         onShortcutRecorded?(UInt32(event.keyCode), modifiers)
         isRecording = false
         window?.makeFirstResponder(nil)
+    }
+
+    private func applyCurrentAppearance() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
+            layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.65).cgColor
+            label.textColor = .labelColor
+        }
     }
 }
